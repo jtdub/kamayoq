@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# sdlc-crew run state
+.sdlc-crew-run/
