@@ -14,10 +14,13 @@ kamayoq = "kamayoq.cli:main"
 
 [dependency-groups]
 dev = [
+    "docker>=7.2",
     "mypy>=2.4",
     "pre-commit>=4.7",
     "pytest>=9",
+    "pytest-cov>=7.1",
     "ruff>=0.17",
+    "testcontainers>=4.15",
 ]
 
 [build-system]
