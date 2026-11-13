@@ -31,6 +31,17 @@ Pre-alpha. Under design. Not ready for use. See the roadmap in [#10](https://git
 - Architecture: [#2](https://github.com/jtdub/kamayoq/issues/2)
 - Roadmap: [#10](https://github.com/jtdub/kamayoq/issues/10)
 
+## Development
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.10.7 or a later 0.10 release.
+uv installs Python 3.12 when your machine does not have it.
+
+```bash
+uv sync
+uv run kamayoq --version
+uv run pytest
+```
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

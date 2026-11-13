@@ -10,10 +10,12 @@ short. Put the reason next to each rule.
 ## Run and test
 
 ```bash
-# start the app
-<run command>
+# install the package and the dev tools
+uv sync
+# show the version
+uv run kamayoq --version
 # run the tests
-<test command>
+uv run pytest
 ```
 
 ## Rules
