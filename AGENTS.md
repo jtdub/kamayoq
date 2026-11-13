@@ -16,7 +16,16 @@ uv sync
 uv run kamayoq --version
 # run the tests
 uv run pytest
+# run each check alone
+uv run ruff check
+uv run ruff format --check
+uv run mypy
+# run all checks, as the commit hook does
+uv run pre-commit run --all-files
 ```
+
+- Run `uv run pre-commit install` once in each clone. The hooks then run before each
+  commit.
 
 ## Rules
 

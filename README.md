@@ -38,8 +38,19 @@ uv installs Python 3.12 when your machine does not have it.
 
 ```bash
 uv sync
+uv run pre-commit install
 uv run kamayoq --version
 uv run pytest
+```
+
+The pre-commit hooks run ruff, mypy, and a check for prose comments before each commit.
+To run the same checks by hand:
+
+```bash
+uv run ruff check
+uv run ruff format --check
+uv run mypy
+uv run pre-commit run --all-files
 ```
 
 ## License
