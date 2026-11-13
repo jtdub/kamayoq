@@ -1,0 +1,26 @@
+[project]
+name = "kamayoq"
+version = "0.1.0.dev0"
+description = "Control plane for agentic operations."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The kamayoq Authors" }]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+kamayoq = "kamayoq.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9"]
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.10.7,<0.11"
+
+[tool.uv.workspace]
+members = ["packages/*"]
