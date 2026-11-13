@@ -57,3 +57,52 @@ def test_mypy_strict_rejects_untyped_function(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "no-untyped-def" in result.stdout
+
+
+def run_comment_hook(tmp_path: Path, source: str) -> subprocess.CompletedProcess[str]:
+    """Run the no-comments pre-commit hook on one sample file."""
+    sample = tmp_path / "sample.py"
+    sample.write_text(source)
+    return run_tool("pre_commit", "run", "no-comments", "--files", str(sample))
+
+
+def test_comment_hook_rejects_prose_comment(tmp_path: Path) -> None:
+    """Report a full-line prose comment."""
+    result = run_comment_hook(tmp_path, '"""M."""\n\n# explain the next line\nx = 1\n')
+    assert result.returncode == 1
+    assert "sample.py:3:# explain the next line" in result.stdout
+
+
+def test_comment_hook_accepts_encoding_line(tmp_path: Path) -> None:
+    """Pass an encoding line."""
+    source = '# -*- coding: utf-8 -*-\n"""M."""\n'
+    assert run_comment_hook(tmp_path, source).returncode == 0
+
+
+def test_comment_hook_accepts_tool_directives(tmp_path: Path) -> None:
+    """Pass a shebang and bare tool directives."""
+    source = (
+        "#!/usr/bin/env python\n"
+        '"""M."""\n\n'
+        "# noqa: E501\n"
+        "# type: ignore\n"
+        "# pragma: no cover\n"
+        "# fmt: off\n"
+        "# pylint: disable=C0114\n"
+        "# ruff: noqa: E501\n"
+        '# mypy: disable-error-code="misc"\n'
+    )
+    assert run_comment_hook(tmp_path, source).returncode == 0
+
+
+def test_comment_hook_rejects_end_of_line_comment(tmp_path: Path) -> None:
+    """Report a prose comment after code."""
+    result = run_comment_hook(tmp_path, '"""M."""\n\nx = 1  # explain x\n')
+    assert result.returncode == 1
+    assert "sample.py:3:# explain x" in result.stdout
+
+
+def test_comment_hook_ignores_hash_inside_string(tmp_path: Path) -> None:
+    """Pass a line that starts with a hash inside a string."""
+    source = '"""M."""\n\nTEXT = """\n# Heading\n"""\n'
+    assert run_comment_hook(tmp_path, source).returncode == 0
