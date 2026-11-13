@@ -46,6 +46,7 @@ uv run pytest
 `uv run pytest` runs the unit tests and the integration tests, and prints a coverage report.
 The integration tests start a Postgres 18 container with pgvector, so they need Docker.
 When Docker is not available, pytest skips them and shows the reason.
+If `KAMAYOQ_REQUIRE_DOCKER` has a value other than empty or `0`, the tests fail and do not skip.
 To run one group only:
 
 ```bash
@@ -65,6 +66,19 @@ uv run ruff format --check
 uv run mypy
 uv run pre-commit run --all-files
 ```
+
+### Continuous integration
+
+Each pull request to `develop` and each push to `develop` runs three checks:
+
+- `lint` runs `ruff check`, `ruff format --check`, and the check for prose comments.
+- `types` runs `mypy`.
+- `tests` runs `pytest` with the unit tests, the integration tests, and coverage.
+
+The checks run the commands of the blocks above.
+The `tests` check sets `KAMAYOQ_REQUIRE_DOCKER=1`, so a missing Docker fails the check.
+Each value except empty and `0` requires Docker.
+To get the same behavior on your machine, run `KAMAYOQ_REQUIRE_DOCKER=1 uv run pytest`.
 
 ## License
 
