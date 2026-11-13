@@ -100,7 +100,11 @@ def test_run_prints_coverage_report_with_missing_lines(tmp_path: Path) -> None:
 def test_postgres_tests_skip_with_reason_when_docker_is_missing(tmp_path: Path) -> None:
     """Skip, and print why, when no Docker daemon answers."""
     missing = tmp_path / "docker.sock"
-    no_docker = {"DOCKER_HOST": f"unix://{missing}", "HOME": str(tmp_path)}
+    no_docker = {
+        "DOCKER_HOST": f"unix://{missing}",
+        "HOME": str(tmp_path),
+        "KAMAYOQ_REQUIRE_DOCKER": "",
+    }
     result = run_pytest(tmp_path, "--no-cov", POSTGRES_TESTS, env=no_docker)
     assert result.returncode == 0
     assert "skipped" in result.stdout
