@@ -1,0 +1,2 @@
+Added CI checks. Each pull request to develop now shows the lint, types, and tests checks.
+Added the KAMAYOQ_REQUIRE_DOCKER setting. Set it to 1, and the integration tests fail when Docker is not available.

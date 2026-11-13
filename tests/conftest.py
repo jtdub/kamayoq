@@ -4,6 +4,7 @@ A test that uses the postgres fixture is an integration test. Each other test is
 unit test.
 """
 
+import os
 import secrets
 from collections.abc import Iterator
 
@@ -23,6 +24,8 @@ RYUK_IMAGE = (
 )
 POSTGRES_DATA_DIR = "/var/lib/postgresql"
 POSTGRES_TMPFS_OPTIONS = "size=1g"
+REQUIRE_DOCKER_ENV = "KAMAYOQ_REQUIRE_DOCKER"
+"""Variable that makes a missing Docker an error. Empty and 0 turn it off."""
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -61,10 +64,13 @@ def postgres() -> Iterator[PostgresContainer]:
     """Start one Postgres 18 container with pgvector for the test session.
 
     The credentials do not come from the environment, and the password is new for
-    each session.
+    each session. The tests skip when Docker is not available, unless
+    KAMAYOQ_REQUIRE_DOCKER has a value other than empty or 0. Then they fail.
     """
     reason = docker_unavailable_reason()
     if reason is not None:
+        if os.environ.get(REQUIRE_DOCKER_ENV, "") not in ("", "0"):
+            pytest.fail(reason)
         pytest.skip(reason)
     container = PostgresContainer(
         PGVECTOR_IMAGE,
