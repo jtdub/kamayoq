@@ -1,0 +1,1 @@
+Added lint, format, and type checks. Run uv run pre-commit install once, and the checks run before each commit.
