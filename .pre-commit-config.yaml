@@ -1,0 +1,26 @@
+minimum_pre_commit_version: "4.7.0"
+exclude: ^\.sdlc-crew/
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --locked ruff check --force-exclude
+        language: unsupported
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --locked ruff format --force-exclude
+        language: unsupported
+        types_or: [python, pyi]
+      - id: mypy
+        name: mypy
+        entry: uv run --locked mypy
+        language: unsupported
+        types_or: [python, pyi]
+        pass_filenames: false
+      - id: no-comments
+        name: no prose comments in Python
+        entry: uv run --locked python scripts/check_comments.py
+        language: unsupported
+        types_or: [python, pyi]
