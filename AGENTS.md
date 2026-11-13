@@ -14,8 +14,11 @@ short. Put the reason next to each rule.
 uv sync
 # show the version
 uv run kamayoq --version
-# run the tests
+# run the tests, with a coverage report
 uv run pytest
+# run the unit tests only, or the integration tests only (they need Docker)
+uv run pytest -m unit
+uv run pytest -m integration
 # run each check alone
 uv run ruff check
 uv run ruff format --check

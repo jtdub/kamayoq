@@ -43,6 +43,19 @@ uv run kamayoq --version
 uv run pytest
 ```
 
+`uv run pytest` runs the unit tests and the integration tests, and prints a coverage report.
+The integration tests start a Postgres 18 container with pgvector, so they need Docker.
+When Docker is not available, pytest skips them and shows the reason.
+To run one group only:
+
+```bash
+uv run pytest -m unit
+uv run pytest -m integration
+```
+
+While the tests run, the test containers publish their ports on all network interfaces.
+To publish on `127.0.0.1` only, set `"ip": "127.0.0.1"` in the Docker daemon settings. This setting changes every container on your machine, not only tests. The project did not test this setting.
+
 The pre-commit hooks run ruff, mypy, and a check for prose comments before each commit.
 To run the same checks by hand:
 
