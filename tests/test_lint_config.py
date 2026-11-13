@@ -106,3 +106,24 @@ def test_comment_hook_ignores_hash_inside_string(tmp_path: Path) -> None:
     """Pass a line that starts with a hash inside a string."""
     source = '"""M."""\n\nTEXT = """\n# Heading\n"""\n'
     assert run_comment_hook(tmp_path, source).returncode == 0
+
+
+def test_comment_hook_accepts_header_on_line_two(tmp_path: Path) -> None:
+    """Pass a shebang on line 1 and an encoding line on line 2."""
+    source = '#!/usr/bin/env python\n# -*- coding: utf-8 -*-\n"""M."""\n'
+    assert run_comment_hook(tmp_path, source).returncode == 0
+
+
+def test_comment_hook_rejects_header_after_line_two(tmp_path: Path) -> None:
+    """Report a shebang and an encoding line after line 2."""
+    source = '"""M."""\n\n#!/usr/bin/env python\n# -*- coding: utf-8 -*-\n'
+    result = run_comment_hook(tmp_path, source)
+    assert result.returncode == 1
+    assert "sample.py:3:#!/usr/bin/env python" in result.stdout
+
+
+def test_comment_hook_rejects_directive_with_prose(tmp_path: Path) -> None:
+    """Report a directive that does not have an exact form."""
+    result = run_comment_hook(tmp_path, '"""M."""\n\nimport os  # noqa because\n')
+    assert result.returncode == 1
+    assert "sample.py:3:# noqa because" in result.stdout
