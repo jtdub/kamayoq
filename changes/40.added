@@ -1,0 +1,2 @@
+Added a Postgres 18 test database. Run uv run pytest -m integration to test against it. Docker must run.
+Added a coverage report. uv run pytest now prints the coverage of each file and the lines that no test runs.
