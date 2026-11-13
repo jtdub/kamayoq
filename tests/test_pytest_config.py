@@ -113,6 +113,22 @@ def test_postgres_tests_skip_with_reason_when_docker_is_missing(tmp_path: Path) 
     assert "Start Docker to run this test." in result.stdout
 
 
+def test_postgres_tests_skip_when_docker_requirement_is_off(tmp_path: Path) -> None:
+    """Skip, and print why, when KAMAYOQ_REQUIRE_DOCKER is 0."""
+    missing = tmp_path / "docker.sock"
+    no_docker = {
+        "DOCKER_HOST": f"unix://{missing}",
+        "HOME": str(tmp_path),
+        "KAMAYOQ_REQUIRE_DOCKER": "0",
+    }
+    result = run_pytest(tmp_path, "--no-cov", POSTGRES_TESTS, env=no_docker)
+    assert result.returncode == 0
+    assert "skipped" in result.stdout
+    assert "passed" not in result.stdout
+    assert "Docker is not available" in result.stdout
+    assert "Start Docker to run this test." in result.stdout
+
+
 @pytest.mark.parametrize("value", ["1", "true"])
 def test_postgres_errors_when_docker_is_required_and_missing(
     tmp_path: Path, value: str
