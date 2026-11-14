@@ -112,3 +112,11 @@ def test_empty_env_value_is_rejected(
         load_settings()
     field = name.removeprefix("KAMAYOQ_").lower()
     assert f"- {field} ({name}): " in str(error_info.value)
+
+
+def test_lower_case_log_level_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Change a lower-case log level to upper case."""
+    monkeypatch.setenv("KAMAYOQ_LOG_LEVEL", "debug")
+    assert load_settings().log_level == "DEBUG"

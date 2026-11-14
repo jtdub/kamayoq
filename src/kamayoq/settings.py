@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     api_docs: bool = False
 
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def upper_case_log_level(cls, value: object) -> object:
+        """Accept a log level in any case."""
+        return value.upper() if isinstance(value, str) else value
+
     @field_validator("database_url", mode="after")
     @classmethod
     def require_libpq_scheme(cls, value: PostgresDsn) -> PostgresDsn:
