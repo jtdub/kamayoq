@@ -1,0 +1,3 @@
+Added the kamayoq serve command, which starts the API server. Set KAMAYOQ_DATABASE_URL first. The README lists the other settings.
+Added the /healthz and /readyz endpoints. /readyz returns 503 when the server cannot reach Postgres.
+Added JSON logs. The server writes each log line to stderr as one JSON object.

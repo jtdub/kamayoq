@@ -9,6 +9,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTGRES_TESTS = "tests/test_postgres.py"
+INTEGRATION_TEST_FILES = (POSTGRES_TESTS, "tests/test_readyz_postgres.py")
 
 
 def run_pytest(
@@ -43,7 +44,7 @@ def test_integration_marker_selects_only_postgres_tests(tmp_path: Path) -> None:
     ids = collected_ids(result)
     assert result.returncode == 0
     assert ids
-    assert all(test_id.startswith(POSTGRES_TESTS) for test_id in ids)
+    assert all(test_id.startswith(INTEGRATION_TEST_FILES) for test_id in ids)
 
 
 def test_unit_marker_selects_every_other_test(tmp_path: Path) -> None:
@@ -52,7 +53,7 @@ def test_unit_marker_selects_every_other_test(tmp_path: Path) -> None:
     ids = collected_ids(result)
     assert result.returncode == 0
     assert "tests/test_cli.py::test_package_version_is_0_1_0_dev0" in ids
-    assert not any(test_id.startswith(POSTGRES_TESTS) for test_id in ids)
+    assert not any(test_id.startswith(INTEGRATION_TEST_FILES) for test_id in ids)
 
 
 def test_unknown_marker_is_an_error(tmp_path: Path) -> None:

@@ -122,6 +122,66 @@ GitHub sends a notice of a failed daily run to the user who last changed the sch
 
 Dependabot runs uv 0.11. If its log at Insights > Dependency graph > Dependabot shows a uv version error, update `required-version` in `pyproject.toml`.
 
+## Run the API server
+
+Set `KAMAYOQ_DATABASE_URL` to a Postgres URL. Then run this command:
+
+```bash
+KAMAYOQ_DATABASE_URL=postgresql://kamayoq:CHANGE_ME@127.0.0.1:5432/kamayoq uv run kamayoq serve
+```
+
+The server listens on `http://127.0.0.1:8000`. Each log line on stderr is one JSON object.
+
+### Settings
+
+`KAMAYOQ_DATABASE_URL` is the only required setting. Each other setting has a default.
+
+kamayoq reads the settings from environment variables. It also reads a TOML file, if `KAMAYOQ_CONFIG_FILE` gives its path.
+Environment variables win over the TOML file. kamayoq does not read a `.env` file. [.env.example](.env.example) lists each variable.
+
+WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has no login yet. Use it only in a container or behind a firewall.
+
+| Environment variable | TOML key | Default | Meaning |
+|---|---|---|---|
+| `KAMAYOQ_DATABASE_URL` | `database_url` | None, required | The Postgres URL. The scheme is `postgres` or `postgresql`. |
+| `KAMAYOQ_HOST` | `host` | `127.0.0.1` | The address that the server listens on. |
+| `KAMAYOQ_PORT` | `port` | `8000` | The TCP port, from 1 to 65535. |
+| `KAMAYOQ_READINESS_TIMEOUT` | `readiness_timeout` | `2.0` | The seconds that `/readyz` waits for Postgres. |
+| `KAMAYOQ_LOG_LEVEL` | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`, in upper or lower case. |
+| `KAMAYOQ_API_DOCS` | `api_docs` | `false` | `true` shows `/docs`, `/redoc`, and `/openapi.json`. |
+| `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
+
+Put `KAMAYOQ_DATABASE_URL` in the environment, not in the TOML file, because the URL can contain a password.
+The TOML file uses top-level keys, with no table:
+
+```toml
+host = "127.0.0.1"
+port = 8000
+readiness_timeout = 2.0
+log_level = "INFO"
+api_docs = false
+```
+
+libpq reads the `PG*` environment variables and `~/.pgpass` for a part that the URL does not give, for example the password.
+The URL must have a host. For a Unix socket, use `postgresql://user@localhost/db?host=/run/postgresql`.
+
+### Endpoints
+
+| Path | Status | Meaning |
+|---|---|---|
+| `/healthz` | 200 | The process runs. This endpoint does not connect to Postgres. |
+| `/readyz` | 200 | Postgres answered `SELECT 1`. |
+| `/readyz` | 503 | Postgres did not answer in time, refused the connection, or refused the login. |
+
+`/readyz` runs one check at a time, and it keeps each result for 1 second.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 2 | A setting or the TOML file is not valid. The message names the setting, not its value. |
+| 3 | The server cannot open the port, for example because the port is in use. |
+
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. All contributors follow the [Code of Conduct](CODE_OF_CONDUCT.md).
