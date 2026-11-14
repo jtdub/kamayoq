@@ -59,6 +59,11 @@ def all_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
     return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
+def every_workflow_step() -> list[dict[str, Any]]:
+    """Return each step of each workflow."""
+    return [step for path in workflow_paths() for step in all_steps(load_yaml(path))]
+
+
 def run_commands(job: dict[str, Any]) -> list[str]:
     """Return the run command of each step of the job, in step order."""
     return [step["run"] for step in job["steps"] if "run" in step]
@@ -87,8 +92,7 @@ def test_every_setup_uv_step_uses_uv_0_11_33() -> None:
     """Install uv 0.11.33 in each setup-uv step of each workflow."""
     setup_uv_steps = [
         step
-        for path in workflow_paths()
-        for step in all_steps(load_yaml(path))
+        for step in every_workflow_step()
         if step.get("uses", "").startswith("astral-sh/setup-uv@")
     ]
     assert setup_uv_steps
@@ -110,12 +114,7 @@ def test_every_workflow_sets_uv_locked(path: Path) -> None:
 
 def test_no_workflow_or_hook_installs_outside_the_lock() -> None:
     """Install only from uv.lock, in each workflow and each pre-commit hook."""
-    run_values = [
-        step["run"]
-        for path in workflow_paths()
-        for step in all_steps(load_yaml(path))
-        if "run" in step
-    ]
+    run_values = [step["run"] for step in every_workflow_step() if "run" in step]
     hook_entries = [
         hook["entry"]
         for repo in load_yaml(PRE_COMMIT_CONFIG)["repos"]
@@ -149,12 +148,7 @@ def test_each_locked_package_has_a_hash_on_each_file() -> None:
 
 def test_every_workflow_action_is_pinned_by_sha_with_version_comment() -> None:
     """Pin each action of each workflow by commit SHA, with the version in a comment."""
-    uses_values = [
-        step["uses"]
-        for path in workflow_paths()
-        for step in all_steps(load_yaml(path))
-        if "uses" in step
-    ]
+    uses_values = [step["uses"] for step in every_workflow_step() if "uses" in step]
     uses_lines = [
         line
         for path in workflow_paths()
