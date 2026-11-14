@@ -2,7 +2,7 @@
 
 import pytest
 
-from kamayoq.settings import load_settings
+from kamayoq.settings import InvalidSettingsError, load_settings
 
 DATABASE_URL = "postgresql://kamayoq:secret@db.example:5432/kamayoq"
 
@@ -23,3 +23,12 @@ def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None
     assert settings.readiness_timeout == 2.0
     assert settings.log_level == "INFO"
     assert settings.api_docs is False
+
+
+def test_missing_database_url_names_field_and_env_name() -> None:
+    """Stop with a message that names the field and its variable."""
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    assert str(error_info.value) == (
+        "Settings are not valid:\n- database_url (KAMAYOQ_DATABASE_URL): Field required"
+    )

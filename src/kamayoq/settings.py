@@ -2,12 +2,16 @@
 
 from typing import Literal
 
-from pydantic import Field, PostgresDsn
+from pydantic import Field, PostgresDsn, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "KAMAYOQ_"
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+class InvalidSettingsError(Exception):
+    """Raise when the settings cannot load. The message is safe to print."""
 
 
 class Settings(BaseSettings):
@@ -28,6 +32,23 @@ class Settings(BaseSettings):
     api_docs: bool = False
 
 
+def validation_message(error: ValidationError) -> str:
+    """Return one line for each error, with the field and its variable only."""
+    lines = ["Settings are not valid:"]
+    for detail in error.errors(include_url=False, include_input=False):
+        location = ".".join(str(part) for part in detail["loc"])
+        env_name = ENV_PREFIX + str(detail["loc"][0]).upper()
+        lines.append(f"- {location} ({env_name}): {detail['msg']}")
+    return "\n".join(lines)
+
+
 def load_settings() -> Settings:
-    """Return the settings from the environment."""
-    return Settings()
+    """Return the settings from the environment.
+
+    Raises:
+        InvalidSettingsError: If a setting is missing or not valid.
+    """
+    try:
+        return Settings()
+    except ValidationError as error:
+        raise InvalidSettingsError(validation_message(error)) from None
