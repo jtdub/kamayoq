@@ -26,11 +26,11 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.10.7,<0.11.0"]
+requires = ["uv_build>=0.11.33,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv]
-required-version = ">=0.10.7,<0.11"
+required-version = ">=0.11.33,<0.12"
 
 [tool.uv.workspace]
 members = ["packages/*"]

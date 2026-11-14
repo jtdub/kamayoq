@@ -33,7 +33,7 @@ Pre-alpha. Under design. Not ready for use. See the roadmap in [#10](https://git
 
 ## Development
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.10.7 or a later 0.10 release.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.11.33 or a later 0.11 release.
 uv installs Python 3.12 when your machine does not have it.
 
 ```bash
