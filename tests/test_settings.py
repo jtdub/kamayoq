@@ -57,3 +57,36 @@ def test_error_message_and_repr_do_not_show_database_password(
     assert "SEKRET" not in str(error_info.value)
     monkeypatch.setenv("KAMAYOQ_DATABASE_URL", "postgresql://u:SEKRET@h/db")
     assert "SEKRET" not in repr(load_settings())
+
+
+def test_url_without_host_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject a Unix socket URL that has no host."""
+    monkeypatch.setenv("KAMAYOQ_DATABASE_URL", "postgresql:///db?host=/run/postgresql")
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    assert "- database_url (KAMAYOQ_DATABASE_URL): " in str(error_info.value)
+    assert "empty host" in str(error_info.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "field"),
+    [
+        ("KAMAYOQ_PORT", "0", "port"),
+        ("KAMAYOQ_PORT", "65536", "port"),
+        ("KAMAYOQ_READINESS_TIMEOUT", "0", "readiness_timeout"),
+        ("KAMAYOQ_READINESS_TIMEOUT", "-1", "readiness_timeout"),
+        ("KAMAYOQ_LOG_LEVEL", "TRACE", "log_level"),
+    ],
+)
+def test_out_of_range_values_are_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+    name: str,
+    value: str,
+    field: str,
+) -> None:
+    """Reject a value outside the range of its field."""
+    monkeypatch.setenv(name, value)
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    assert f"- {field} ({name}): " in str(error_info.value)
