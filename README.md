@@ -90,6 +90,10 @@ To get the same behavior on your machine, run `KAMAYOQ_REQUIRE_DOCKER=1 uv run p
 
 The Supply chain workflow adds two checks. See [Supply chain](#supply-chain).
 
+The Changelog workflow adds the `changelog` check. It fails when a pull request adds no fragment in `changes/`.
+To preview the release notes, run `uv run towncrier build --draft`.
+To skip the check, see [Changelog](CONTRIBUTING.md#changelog).
+
 ### Supply chain
 
 Each pull request to `develop`, each push to `develop`, and a daily schedule run the Supply chain workflow:
