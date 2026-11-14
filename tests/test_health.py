@@ -23,11 +23,14 @@ def free_port() -> int:
     return port
 
 
-def client_for(database_url: str, readiness_timeout: float = 2.0) -> TestClient:
+def client_for(
+    database_url: str, readiness_timeout: float = 2.0, api_docs: bool = False
+) -> TestClient:
     """Return a test client for an app with this database URL."""
     settings = Settings(
         database_url=database_url,
         readiness_timeout=readiness_timeout,
+        api_docs=api_docs,
     )
     return TestClient(create_app(settings))
 
@@ -140,5 +143,4 @@ def test_api_docs_are_off_by_default(path: str) -> None:
 @pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
 def test_api_docs_setting_turns_docs_on(path: str) -> None:
     """Show the API docs when api_docs is true."""
-    settings = Settings(database_url=refused_url(), api_docs=True)
-    assert TestClient(create_app(settings)).get(path).status_code == 200
+    assert client_for(refused_url(), api_docs=True).get(path).status_code == 200
