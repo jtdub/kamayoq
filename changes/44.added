@@ -1,0 +1,2 @@
+Added the changelog check. Each pull request to develop needs a fragment in changes/, or the skip-changelog label.
+Added a release notes preview. Run uv run towncrier build --draft to see the notes from the fragments in changes/.

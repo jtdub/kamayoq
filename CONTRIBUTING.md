@@ -33,9 +33,12 @@ Add a changelog fragment for each change that a user can see.
 - Name the file `changes/<issue>.<type>`.
   Use the pull request number when no issue exists.
 - Use one of these types: `added`, `changed`, `fixed`, `removed`, or `security`.
-  Issue [#44](https://github.com/jtdub/kamayoq/issues/44) sets up the changelog tool.
 - Write one item on each line. Do not add a bullet marker.
 - Start each item with a verb, for example "Added" or "Fixed".
+- To preview the release notes, run `uv run towncrier build --draft`.
+- The `changelog` check fails when a pull request adds no fragment.
+- When a change has nothing for a user to see, ask the maintainer to add the `skip-changelog` label.
+- Pull requests from Dependabot skip the check.
 
 ## Pull request
 

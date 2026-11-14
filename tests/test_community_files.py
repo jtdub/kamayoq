@@ -12,6 +12,7 @@ ISSUE_TEMPLATE_DIR = PROJECT_ROOT / ".github" / "ISSUE_TEMPLATE"
 SECURITY_POLICY = PROJECT_ROOT / "SECURITY.md"
 CODE_OF_CONDUCT = PROJECT_ROOT / "CODE_OF_CONDUCT.md"
 CONTRIBUTING = PROJECT_ROOT / "CONTRIBUTING.md"
+README = PROJECT_ROOT / "README.md"
 PULL_REQUEST_TEMPLATE = PROJECT_ROOT / ".github" / "pull_request_template.md"
 ADVISORIES_URL = "https://github.com/jtdub/kamayoq/security/advisories/new"
 SECURITY_POLICY_URL = "https://github.com/jtdub/kamayoq/blob/develop/SECURITY.md"
@@ -149,8 +150,23 @@ def test_contributing_gives_setup_flow_and_changelog() -> None:
         *FRAGMENT_TYPES,
         "CODE_OF_CONDUCT.md",
         "SECURITY.md",
+        "uv run towncrier build --draft",
+        "skip-changelog",
     ):
         assert expected in text
+    assert "sets up the changelog tool" not in text
+
+
+def test_readme_names_changelog_check_preview_and_skip_link() -> None:
+    """Name the changelog check, the preview command, and the skip rule link."""
+    text = README.read_text(encoding="utf-8")
+    for sentence in (
+        "The Changelog workflow adds the `changelog` check."
+        " It fails when a pull request adds no fragment in `changes/`.",
+        "To preview the release notes, run `uv run towncrier build --draft`.",
+        "To skip the check, see [Changelog](CONTRIBUTING.md#changelog).",
+    ):
+        assert sentence in text
 
 
 def test_pull_request_template_shape() -> None:
