@@ -13,6 +13,7 @@ dependencies = []
 kamayoq = "kamayoq.cli:main"
 
 [dependency-groups]
+audit = ["pip-audit>=2.10.1"]
 dev = [
     "docker>=7.2",
     "mypy>=2.4",

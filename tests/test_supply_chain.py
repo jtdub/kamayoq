@@ -13,6 +13,7 @@ WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 README = PROJECT_ROOT / "README.md"
 UV_LOCK = PROJECT_ROOT / "uv.lock"
+SUPPLY_CHAIN_WORKFLOW = WORKFLOWS_DIR / "supply-chain.yml"
 PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
 PYPI_SOURCE = {"registry": "https://pypi.org/simple"}
 INSTALLS_OUTSIDE_THE_LOCK = (
@@ -163,3 +164,68 @@ def test_every_workflow_action_is_pinned_by_sha_with_version_comment() -> None:
     assert len(uses_lines) == len(uses_values)
     for line in uses_lines:
         assert PINNED_USES_LINE.fullmatch(line), line
+
+
+def test_supply_chain_workflow_runs_on_pr_push_and_daily() -> None:
+    """Run on a pull request to develop, a push to develop, and each day."""
+    workflow = load_yaml(SUPPLY_CHAIN_WORKFLOW)
+    assert workflow["name"] == "Supply chain"
+    assert workflow["on"] == {
+        "pull_request": {"branches": ["develop"]},
+        "push": {"branches": ["develop"]},
+        "schedule": [{"cron": "17 6 * * *"}],
+    }
+
+
+def test_supply_chain_workflow_keeps_read_only_token() -> None:
+    """Give the token read access only, and let no step fail without a red run."""
+    workflow = load_yaml(SUPPLY_CHAIN_WORKFLOW)
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(workflow["jobs"]) == {"audit", "sbom"}
+    for job in workflow["jobs"].values():
+        assert job["runs-on"] == "ubuntu-latest"
+        assert job["timeout-minutes"] == "10"
+        assert step_using(job, "actions/checkout")["with"]["persist-credentials"] == (
+            "false"
+        )
+        assert step_using(job, "astral-sh/setup-uv")["with"]["enable-cache"] == "true"
+    for step in all_steps(workflow):
+        assert "continue-on-error" not in step
+
+
+def test_audit_job_runs_pip_audit_on_every_locked_package() -> None:
+    """Audit each locked package, on each platform, against the OSV database."""
+    audit = load_yaml(SUPPLY_CHAIN_WORKFLOW)["jobs"]["audit"]
+    assert run_commands(audit) == [
+        "uv sync --locked --only-group audit",
+        "uv export --locked --all-packages --all-groups --no-emit-project"
+        " --format requirements-txt"
+        ' --output-file "$RUNNER_TEMP/requirements.txt"',
+        "sed -i -E 's/ ; [^\\\\]*//' \"$RUNNER_TEMP/requirements.txt\"",
+        "uv run --locked --only-group audit pip-audit"
+        " --vulnerability-service osv --strict"
+        ' --disable-pip --no-deps --requirement "$RUNNER_TEMP/requirements.txt"',
+    ]
+
+
+def test_sbom_job_uploads_cyclonedx_artifact_on_every_run() -> None:
+    """Upload a CycloneDX SBOM of each locked package on each run."""
+    sbom = load_yaml(SUPPLY_CHAIN_WORKFLOW)["jobs"]["sbom"]
+    assert run_commands(sbom) == [
+        "uv export --locked --all-packages --all-groups --format cyclonedx1.5"
+        " --preview-features sbom-export --output-file sbom.cdx.json",
+    ]
+    upload = step_using(sbom, "actions/upload-artifact")
+    assert upload["with"] == {
+        "name": "sbom-cyclonedx",
+        "path": "sbom.cdx.json",
+        "if-no-files-found": "error",
+    }
+    assert "if" not in upload
+
+
+def test_audit_group_holds_pip_audit_and_is_not_a_default_group() -> None:
+    """Keep pip-audit in the lock, out of the default install."""
+    pyproject = load_pyproject()
+    assert pyproject["dependency-groups"]["audit"] == ["pip-audit>=2.10.1"]
+    assert "audit" not in pyproject["tool"]["uv"].get("default-groups", [])

@@ -1,0 +1,54 @@
+name: Supply chain
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: "1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.33"
+          enable-cache: true
+      - run: uv sync --locked --only-group audit
+      - run: uv export --locked --all-packages --all-groups --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/requirements.txt"
+      - run: sed -i -E 's/ ; [^\\]*//' "$RUNNER_TEMP/requirements.txt"
+      - run: uv run --locked --only-group audit pip-audit --vulnerability-service osv --strict --disable-pip --no-deps --requirement "$RUNNER_TEMP/requirements.txt"
+
+  sbom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.33"
+          enable-cache: true
+      - run: uv export --locked --all-packages --all-groups --format cyclonedx1.5 --preview-features sbom-export --output-file sbom.cdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: error
