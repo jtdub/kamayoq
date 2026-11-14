@@ -118,6 +118,11 @@ GitHub sends a notice of a failed daily run to the user who last changed the sch
 
 Dependabot runs uv 0.11. If its log at Insights > Dependency graph > Dependabot shows a uv version error, update `required-version` in `pyproject.toml`.
 
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. All contributors follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+To report a vulnerability, follow [SECURITY.md](SECURITY.md). Do not open a public issue.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
