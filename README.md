@@ -147,7 +147,7 @@ WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has
 | `KAMAYOQ_HOST` | `host` | `127.0.0.1` | The address that the server listens on. |
 | `KAMAYOQ_PORT` | `port` | `8000` | The TCP port, from 1 to 65535. |
 | `KAMAYOQ_READINESS_TIMEOUT` | `readiness_timeout` | `2.0` | The seconds that `/readyz` waits for Postgres. |
-| `KAMAYOQ_LOG_LEVEL` | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`, in any case. |
+| `KAMAYOQ_LOG_LEVEL` | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`, in upper or lower case. |
 | `KAMAYOQ_API_DOCS` | `api_docs` | `false` | `true` shows `/docs`, `/redoc`, and `/openapi.json`. |
 | `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
 
