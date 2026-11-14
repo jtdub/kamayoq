@@ -1,6 +1,7 @@
 """Settings of kamayoq, read from KAMAYOQ_ environment variables."""
 
 import os
+import tomllib
 from pathlib import Path
 from typing import Literal
 
@@ -9,6 +10,7 @@ from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
+    SettingsError,
     TomlConfigSettingsSource,
 )
 
@@ -25,11 +27,25 @@ class InvalidSettingsError(Exception):
 
 
 def config_file_path() -> Path | None:
-    """Return the resolved path in KAMAYOQ_CONFIG_FILE, or None if it is not set."""
+    """Return the resolved path in KAMAYOQ_CONFIG_FILE, or None if it is not set.
+
+    Raises:
+        InvalidSettingsError: If the value is empty or does not name a file.
+    """
     value = os.environ.get(CONFIG_FILE_ENV)
     if value is None:
         return None
-    return Path(value).resolve()
+    if not value:
+        raise InvalidSettingsError(
+            f"{CONFIG_FILE_ENV} is empty. "
+            "Unset it, or set it to the path of a TOML file."
+        )
+    path = Path(value).resolve()
+    if not path.is_file():
+        raise InvalidSettingsError(
+            f"{CONFIG_FILE_ENV} names {path}, which is not a file."
+        )
+    return path
 
 
 class Settings(BaseSettings):
@@ -96,12 +112,21 @@ def validation_message(error: ValidationError) -> str:
 
 
 def load_settings() -> Settings:
-    """Return the settings from the environment.
+    """Return the settings from the environment and the TOML file.
 
     Raises:
-        InvalidSettingsError: If a setting is missing or not valid.
+        InvalidSettingsError: If a setting or the TOML file is not valid.
     """
+    path = config_file_path()
     try:
         return Settings()
     except ValidationError as error:
         raise InvalidSettingsError(validation_message(error)) from None
+    except tomllib.TOMLDecodeError as error:
+        raise InvalidSettingsError(f"{path} is not valid TOML: {error}") from None
+    except UnicodeDecodeError:
+        raise InvalidSettingsError(f"{path} is not UTF-8 text.") from None
+    except OSError as error:
+        raise InvalidSettingsError(f"cannot read {path}: {error.strerror}") from None
+    except SettingsError as error:
+        raise InvalidSettingsError(f"Settings are not valid: {error}") from None

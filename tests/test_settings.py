@@ -1,5 +1,7 @@
 """Unit tests for the kamayoq settings."""
 
+import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -28,6 +30,59 @@ def config_file(monkeypatch: pytest.MonkeyPatch, path: Path, content: str) -> Pa
     path.write_text(content, encoding="utf-8")
     monkeypatch.setenv("KAMAYOQ_CONFIG_FILE", str(path))
     return path
+
+
+def empty_config_file_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Set KAMAYOQ_CONFIG_FILE to an empty value."""
+    monkeypatch.setenv("KAMAYOQ_CONFIG_FILE", "")
+    return (
+        "KAMAYOQ_CONFIG_FILE is empty. Unset it, or set it to the path of a TOML file."
+    )
+
+
+def missing_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Point KAMAYOQ_CONFIG_FILE at a path that does not exist."""
+    path = tmp_path / "nope.toml"
+    monkeypatch.setenv("KAMAYOQ_CONFIG_FILE", str(path))
+    return f"KAMAYOQ_CONFIG_FILE names {path.resolve()}, which is not a file."
+
+
+def directory_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Point KAMAYOQ_CONFIG_FILE at a directory."""
+    monkeypatch.setenv("KAMAYOQ_CONFIG_FILE", str(tmp_path))
+    return f"KAMAYOQ_CONFIG_FILE names {tmp_path.resolve()}, which is not a file."
+
+
+def invalid_toml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Write a file with a TOML syntax error."""
+    path = config_file(monkeypatch, tmp_path / "kamayoq.toml", "port = \n")
+    return f"{path.resolve()} is not valid TOML: "
+
+
+def non_utf8_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Write a file that is not UTF-8 text."""
+    path = config_file(monkeypatch, tmp_path / "kamayoq.toml", "")
+    path.write_bytes(b'host = "\xff"\n')
+    return f"{path.resolve()} is not UTF-8 text."
+
+
+def unreadable_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Write a file that the process cannot read."""
+    path = config_file(monkeypatch, tmp_path / "kamayoq.toml", TOML_SETTINGS)
+    path.chmod(0)
+    return f"cannot read {path.resolve()}: Permission denied"
+
+
+def table_in_toml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Write a file that puts a setting in a table."""
+    config_file(monkeypatch, tmp_path / "kamayoq.toml", "[server]\nport = 8001\n")
+    return "- server (KAMAYOQ_SERVER): Extra inputs are not permitted"
+
+
+def unknown_key_in_toml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Write a file with a key that is not a setting."""
+    config_file(monkeypatch, tmp_path / "kamayoq.toml", 'colour = "red"\n')
+    return "- colour (KAMAYOQ_COLOUR): Extra inputs are not permitted"
 
 
 def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None:
@@ -158,3 +213,34 @@ def test_env_value_wins_over_toml_value(
     config_file(monkeypatch, tmp_path / "kamayoq.toml", TOML_SETTINGS)
     monkeypatch.setenv("KAMAYOQ_PORT", "9000")
     assert load_settings().port == 9000
+
+
+@pytest.mark.parametrize(
+    "write_case",
+    [
+        empty_config_file_env,
+        missing_config_file,
+        directory_config_file,
+        invalid_toml_file,
+        non_utf8_file,
+        pytest.param(
+            unreadable_file,
+            marks=pytest.mark.skipif(
+                os.geteuid() == 0, reason="root can read a file with mode 0"
+            ),
+        ),
+        table_in_toml_file,
+        unknown_key_in_toml_file,
+    ],
+)
+def test_config_file_errors_name_the_problem(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+    tmp_path: Path,
+    write_case: Callable[[pytest.MonkeyPatch, Path], str],
+) -> None:
+    """Stop with a message that names the problem with the config file."""
+    expected = write_case(monkeypatch, tmp_path)
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    assert expected in str(error_info.value)
