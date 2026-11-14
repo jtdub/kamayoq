@@ -90,3 +90,25 @@ def test_out_of_range_values_are_rejected(
     with pytest.raises(InvalidSettingsError) as error_info:
         load_settings()
     assert f"- {field} ({name}): " in str(error_info.value)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "KAMAYOQ_HOST",
+        "KAMAYOQ_PORT",
+        "KAMAYOQ_READINESS_TIMEOUT",
+        "KAMAYOQ_LOG_LEVEL",
+        "KAMAYOQ_API_DOCS",
+        "KAMAYOQ_DATABASE_URL",
+    ],
+)
+def test_empty_env_value_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, name: str
+) -> None:
+    """Reject an empty value. It does not fall back to the default."""
+    monkeypatch.setenv(name, "")
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    field = name.removeprefix("KAMAYOQ_").lower()
+    assert f"- {field} ({name}): " in str(error_info.value)
