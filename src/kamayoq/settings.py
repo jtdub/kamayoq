@@ -2,10 +2,12 @@
 
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, ValidationError
+from pydantic import Field, PostgresDsn, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX = "KAMAYOQ_"
+
+LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -30,6 +32,16 @@ class Settings(BaseSettings):
     readiness_timeout: float = Field(default=2.0, gt=0)
     log_level: LogLevel = "INFO"
     api_docs: bool = False
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def require_libpq_scheme(cls, value: PostgresDsn) -> PostgresDsn:
+        """Reject a driver scheme. The message names the scheme only."""
+        if value.scheme not in LIBPQ_SCHEMES:
+            raise ValueError(
+                f"the scheme must be postgres or postgresql, not {value.scheme}"
+            )
+        return value
 
 
 def validation_message(error: ValidationError) -> str:

@@ -32,3 +32,16 @@ def test_missing_database_url_names_field_and_env_name() -> None:
     assert str(error_info.value) == (
         "Settings are not valid:\n- database_url (KAMAYOQ_DATABASE_URL): Field required"
     )
+
+
+def test_driver_scheme_in_database_url_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accept only the libpq schemes postgres and postgresql."""
+    monkeypatch.setenv("KAMAYOQ_DATABASE_URL", "postgresql+psycopg://u:p@h/db")
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    assert "- database_url (KAMAYOQ_DATABASE_URL): " in str(error_info.value)
+    assert "the scheme must be postgres or postgresql, not postgresql+psycopg" in str(
+        error_info.value
+    )
