@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sys
 from typing import Any
 
 from kamayoq.log import JsonFormatter
@@ -30,3 +31,14 @@ def test_record_is_one_json_object_with_required_keys() -> None:
     assert fields["level"] == "INFO"
     assert fields["logger"] == "kamayoq.test"
     assert fields["message"] == "ready in 12 ms"
+
+
+def test_exception_and_stack_are_included_in_json() -> None:
+    """Add the traceback and the stack when the record has them."""
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        record = make_record(exc_info=sys.exc_info(), stack_info="Stack (most recent)")
+    fields = json.loads(JsonFormatter().format(record))
+    assert "RuntimeError: boom" in fields["exc_info"]
+    assert fields["stack_info"] == "Stack (most recent)"

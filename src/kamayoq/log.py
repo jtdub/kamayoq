@@ -18,4 +18,8 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        if record.exc_info:
+            fields["exc_info"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            fields["stack_info"] = self.formatStack(record.stack_info)
         return json.dumps(fields, default=str)
