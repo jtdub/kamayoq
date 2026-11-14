@@ -33,7 +33,15 @@ Pre-alpha. Under design. Not ready for use. See the roadmap in [#10](https://git
 
 ## Development
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.10.7 or a later 0.10 release.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.11.33 or a later 0.11 release.
+The latest uv release and a plain `uv self update` give a uv that is too new, and `uv sync` stops.
+To install uv 0.11.33 with the standalone installer, run this command:
+
+```bash
+curl -LsSf https://astral.sh/uv/0.11.33/install.sh | sh
+```
+
+To change a uv that the standalone installer installed, run `uv self update 0.11.33`.
 uv installs Python 3.12 when your machine does not have it.
 
 ```bash
@@ -69,7 +77,7 @@ uv run pre-commit run --all-files
 
 ### Continuous integration
 
-Each pull request to `develop` and each push to `develop` runs three checks:
+Each pull request to `develop` and each push to `develop` runs the three checks of the CI workflow:
 
 - `lint` runs `ruff check`, `ruff format --check`, and the check for prose comments.
 - `types` runs `mypy`.
@@ -79,6 +87,36 @@ The checks run the commands of the blocks above.
 The `tests` check sets `KAMAYOQ_REQUIRE_DOCKER=1`, so a missing Docker fails the check.
 Each value except empty and `0` requires Docker.
 To get the same behavior on your machine, run `KAMAYOQ_REQUIRE_DOCKER=1 uv run pytest`.
+
+The Supply chain workflow adds two checks. See [Supply chain](#supply-chain).
+
+### Supply chain
+
+Each pull request to `develop`, each push to `develop`, and a daily schedule run the Supply chain workflow:
+
+- `audit` runs `pip-audit` with the OSV database on each package in `uv.lock`. OSV holds known vulnerabilities and known malicious releases.
+- `sbom` writes a CycloneDX 1.5 SBOM of each package in `uv.lock`. Download it as the `sbom-cyclonedx` artifact of the run.
+
+uv installs only the files in `uv.lock`, and it checks the sha256 hash of each file. CI sets `UV_LOCKED=1`, so a lock that does not match `pyproject.toml` fails the run.
+
+uv does not lock a release that is less than 7 days old (`exclude-newer = "7 days"` in `pyproject.toml`). Dependabot opens update pull requests each week for Python packages and GitHub Actions, and it also waits 7 days after each release. Each Action is pinned by commit SHA, with the version in a comment.
+
+To add a fix that is less than 7 days old:
+
+1. Add `exclude-newer-package = { <name> = "0 days" }` under `[tool.uv]` in `pyproject.toml`.
+2. Run `uv lock --upgrade-package <name>`.
+3. Open an issue to remove the entry after 7 days.
+
+When `audit` reports a vulnerability that has no fixed release:
+
+1. Add `--ignore-vuln <ID>` to the `pip-audit` command in `.github/workflows/supply-chain.yml`.
+2. Make the same change in `tests/test_supply_chain.py`.
+3. Give the reason in the pull request.
+4. Open an issue to remove the flag.
+
+GitHub sends a notice of a failed daily run to the user who last changed the schedule, if that user's Actions notifications are on. GitHub turns the schedule off after 60 days with no activity in the repository. To turn it on again, run `gh workflow enable supply-chain.yml`.
+
+Dependabot runs uv 0.11. If its log at Insights > Dependency graph > Dependabot shows a uv version error, update `required-version` in `pyproject.toml`.
 
 ## License
 

@@ -1,0 +1,2 @@
+Changed the required uv version to 0.11. Install uv 0.11.33 or a later 0.11 release before you run uv sync.
+Changed dependency resolution to skip releases less than 7 days old. The README tells how to add an urgent fix.

@@ -1,0 +1,3 @@
+Added the Supply chain checks, audit and sbom. They run on each pull request, each push to develop, and each day.
+Added a CycloneDX SBOM of the locked packages to each Supply chain run, as the sbom-cyclonedx artifact.
+Added Dependabot updates for Python packages and GitHub Actions, with a 7-day wait after each release.
