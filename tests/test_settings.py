@@ -244,3 +244,12 @@ def test_config_file_errors_name_the_problem(
     with pytest.raises(InvalidSettingsError) as error_info:
         load_settings()
     assert expected in str(error_info.value)
+
+
+def test_unknown_kamayoq_env_var_is_ignored(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Ignore a KAMAYOQ_ variable that is not a setting."""
+    monkeypatch.setenv("KAMAYOQ_REQUIRE_DOCKER", "1")
+    monkeypatch.setenv("KAMAYOQ_NOT_A_SETTING", "x")
+    assert load_settings().port == 8000
