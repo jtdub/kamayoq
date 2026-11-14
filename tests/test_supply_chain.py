@@ -14,6 +14,7 @@ PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 README = PROJECT_ROOT / "README.md"
 UV_LOCK = PROJECT_ROOT / "uv.lock"
 SUPPLY_CHAIN_WORKFLOW = WORKFLOWS_DIR / "supply-chain.yml"
+DEPENDABOT_CONFIG = PROJECT_ROOT / ".github" / "dependabot.yml"
 PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
 PYPI_SOURCE = {"registry": "https://pypi.org/simple"}
 INSTALLS_OUTSIDE_THE_LOCK = (
@@ -229,3 +230,19 @@ def test_audit_group_holds_pip_audit_and_is_not_a_default_group() -> None:
     pyproject = load_pyproject()
     assert pyproject["dependency-groups"]["audit"] == ["pip-audit>=2.10.1"]
     assert "audit" not in pyproject["tool"]["uv"].get("default-groups", [])
+
+
+def test_dependabot_updates_uv_and_actions_with_seven_day_cooldown() -> None:
+    """Propose weekly updates of uv and Actions, 7 days after each release."""
+    config = load_yaml(DEPENDABOT_CONFIG)
+    assert config["version"] == "2"
+    updates = config["updates"]
+    assert len(updates) == 2
+    assert {update["package-ecosystem"] for update in updates} == {
+        "uv",
+        "github-actions",
+    }
+    for update in updates:
+        assert update["directory"] == "/"
+        assert update["schedule"] == {"interval": "weekly"}
+        assert update["cooldown"] == {"default-days": "7"}
