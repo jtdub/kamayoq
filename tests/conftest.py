@@ -26,6 +26,7 @@ POSTGRES_DATA_DIR = "/var/lib/postgresql"
 POSTGRES_TMPFS_OPTIONS = "size=1g"
 REQUIRE_DOCKER_ENV = "KAMAYOQ_REQUIRE_DOCKER"
 """Variable that makes a missing Docker an error. Empty and 0 turn it off."""
+SETTINGS_ENV_PREFIX = "KAMAYOQ_"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -48,6 +49,14 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.integration)
         if item.get_closest_marker("integration") is None:
             item.add_marker(pytest.mark.unit)
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove the kamayoq settings of the developer from the environment."""
+    for name in list(os.environ):
+        if name.startswith(SETTINGS_ENV_PREFIX) and name != REQUIRE_DOCKER_ENV:
+            monkeypatch.delenv(name)
 
 
 def docker_unavailable_reason() -> str | None:

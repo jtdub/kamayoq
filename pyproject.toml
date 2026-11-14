@@ -7,7 +7,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "The kamayoq Authors" }]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pydantic-settings>=2.16.2"]
 
 [project.scripts]
 kamayoq = "kamayoq.cli:main"
@@ -65,6 +65,7 @@ show_missing = true
 
 [tool.mypy]
 strict = true
+plugins = ["pydantic.mypy"]
 files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
