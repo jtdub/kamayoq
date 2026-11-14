@@ -36,7 +36,7 @@ def run_towncrier(
 
 
 def draft_in(project: Path) -> subprocess.CompletedProcess[str]:
-    """Run the draft build in the temporary project."""
+    """Run the draft build in the project."""
     return run_towncrier([*DRAFT_ARGS, "--dir", str(project)], cwd=project)
 
 
@@ -54,6 +54,12 @@ def towncrier_project(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.fixture(scope="module")
+def repo_draft() -> subprocess.CompletedProcess[str]:
+    """Return the draft build of the fragments of this repository."""
+    return draft_in(PROJECT_ROOT)
+
+
 def test_towncrier_types_match_contributing_fragment_types() -> None:
     """Declare the five fragment types of CONTRIBUTING.md, in order."""
     config = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
@@ -64,10 +70,11 @@ def test_towncrier_types_match_contributing_fragment_types() -> None:
         assert entry["name"] == entry["directory"].title()
 
 
-def test_draft_renders_each_fragment_line_as_own_bullet() -> None:
+def test_draft_renders_each_fragment_line_as_own_bullet(
+    repo_draft: subprocess.CompletedProcess[str],
+) -> None:
     """Render each non-blank fragment line of changes/ as its own bullet."""
-    result = run_towncrier(list(DRAFT_ARGS), cwd=PROJECT_ROOT)
-    assert result.returncode == 0, result.stderr
+    assert repo_draft.returncode == 0, repo_draft.stderr
     expected = []
     for fragment in sorted(CHANGES_DIR.iterdir()):
         if fragment == TEMPLATE:
@@ -78,17 +85,18 @@ def test_draft_renders_each_fragment_line_as_own_bullet() -> None:
         expected += [
             bullet(line.strip(), name["issue"]) for line in lines if line.strip()
         ]
-    output_lines = result.stdout.splitlines()
+    output_lines = repo_draft.stdout.splitlines()
     for line in expected:
         assert line in output_lines
     assert sum(line.startswith("- ") for line in output_lines) == len(expected)
 
 
-def test_draft_has_no_double_bullet_marker() -> None:
+def test_draft_has_no_double_bullet_marker(
+    repo_draft: subprocess.CompletedProcess[str],
+) -> None:
     """Supply one bullet marker only, as the CONTRIBUTING.md rule needs."""
-    result = run_towncrier(list(DRAFT_ARGS), cwd=PROJECT_ROOT)
-    assert result.returncode == 0, result.stderr
-    for line in result.stdout.splitlines():
+    assert repo_draft.returncode == 0, repo_draft.stderr
+    for line in repo_draft.stdout.splitlines():
         assert not line.startswith(("- - ", "- * "))
 
 
