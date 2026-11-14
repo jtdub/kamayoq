@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_LOCKED: "1"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

@@ -1,5 +1,6 @@
 """Unit tests that prove the supply-chain controls of the project."""
 
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,19 @@ WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 README = PROJECT_ROOT / "README.md"
 UV_LOCK = PROJECT_ROOT / "uv.lock"
+PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
+PYPI_SOURCE = {"registry": "https://pypi.org/simple"}
+INSTALLS_OUTSIDE_THE_LOCK = (
+    "uvx",
+    "uv pip",
+    "uv tool",
+    "uv add",
+    "uv lock",
+    "pip install",
+)
+PINNED_USES_LINE = re.compile(
+    r"\s*(- )?uses: [\w.-]+/[\w./-]+@[0-9a-f]{40} # v\d+(\.\d+)*"
+)
 UV_VERSION = "0.11.33"
 
 
@@ -84,3 +98,68 @@ def test_uv_rejects_packages_newer_than_seven_days() -> None:
     """Lock no release that is less than 7 days old."""
     assert load_pyproject()["tool"]["uv"]["exclude-newer"] == "7 days"
     assert load_uv_lock()["options"]["exclude-newer-span"] == "P7D"
+
+
+@pytest.mark.parametrize("path", workflow_paths(), ids=lambda path: path.name)
+def test_every_workflow_sets_uv_locked(path: Path) -> None:
+    """Stop each uv command of the workflow that would change the lock."""
+    assert load_yaml(path)["env"]["UV_LOCKED"] == "1"
+
+
+def test_no_workflow_or_hook_installs_outside_the_lock() -> None:
+    """Install only from uv.lock, in each workflow and each pre-commit hook."""
+    run_values = [
+        step["run"]
+        for path in workflow_paths()
+        for step in all_steps(load_yaml(path))
+        if "run" in step
+    ]
+    hook_entries = [
+        hook["entry"]
+        for repo in load_yaml(PRE_COMMIT_CONFIG)["repos"]
+        for hook in repo["hooks"]
+    ]
+    assert run_values
+    assert hook_entries
+    for command in run_values + hook_entries:
+        for forbidden in INSTALLS_OUTSIDE_THE_LOCK:
+            assert forbidden not in command
+    for entry in hook_entries:
+        if entry.startswith("uv "):
+            assert entry.startswith("uv run --locked ")
+
+
+def test_each_locked_package_has_a_hash_on_each_file() -> None:
+    """Lock each package from PyPI, with a sha256 hash on each file."""
+    packages = [
+        package for package in load_uv_lock()["package"] if package["name"] != "kamayoq"
+    ]
+    assert packages
+    for package in packages:
+        assert package["source"] == PYPI_SOURCE, package["name"]
+        files = package.get("wheels", []) + (
+            [package["sdist"]] if "sdist" in package else []
+        )
+        assert files, package["name"]
+        for locked_file in files:
+            assert locked_file["hash"].startswith("sha256:"), package["name"]
+
+
+def test_every_workflow_action_is_pinned_by_sha_with_version_comment() -> None:
+    """Pin each action of each workflow by commit SHA, with the version in a comment."""
+    uses_values = [
+        step["uses"]
+        for path in workflow_paths()
+        for step in all_steps(load_yaml(path))
+        if "uses" in step
+    ]
+    uses_lines = [
+        line
+        for path in workflow_paths()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "uses:" in line
+    ]
+    assert uses_values
+    assert len(uses_lines) == len(uses_values)
+    for line in uses_lines:
+        assert PINNED_USES_LINE.fullmatch(line), line
