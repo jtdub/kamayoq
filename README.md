@@ -34,6 +34,14 @@ Pre-alpha. Under design. Not ready for use. See the roadmap in [#10](https://git
 ## Development
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.11.33 or a later 0.11 release.
+The latest uv release and a plain `uv self update` give a uv that is too new, and `uv sync` stops.
+To install uv 0.11.33 with the standalone installer, run this command:
+
+```bash
+curl -LsSf https://astral.sh/uv/0.11.33/install.sh | sh
+```
+
+To change a uv that the standalone installer installed, run `uv self update 0.11.33`.
 uv installs Python 3.12 when your machine does not have it.
 
 ```bash
