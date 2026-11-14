@@ -45,3 +45,15 @@ def test_driver_scheme_in_database_url_is_rejected(
     assert "the scheme must be postgres or postgresql, not postgresql+psycopg" in str(
         error_info.value
     )
+
+
+def test_error_message_and_repr_do_not_show_database_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the password out of the error message and out of repr."""
+    monkeypatch.setenv("KAMAYOQ_DATABASE_URL", "postgresql+psycopg://u:SEKRET@h/db")
+    with pytest.raises(InvalidSettingsError) as error_info:
+        load_settings()
+    assert "SEKRET" not in str(error_info.value)
+    monkeypatch.setenv("KAMAYOQ_DATABASE_URL", "postgresql://u:SEKRET@h/db")
+    assert "SEKRET" not in repr(load_settings())
