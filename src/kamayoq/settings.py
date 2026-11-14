@@ -16,9 +16,7 @@ from pydantic_settings import (
 
 ENV_PREFIX = "KAMAYOQ_"
 CONFIG_FILE_ENV = "KAMAYOQ_CONFIG_FILE"
-
 LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
-
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 

@@ -30,7 +30,6 @@ def make_record(**fields: Any) -> logging.LogRecord:
     return logging.makeLogRecord(
         {
             "name": "kamayoq.test",
-            "levelno": logging.INFO,
             "levelname": "INFO",
             "msg": "ready in %d ms",
             "args": (12,),

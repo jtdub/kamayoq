@@ -14,6 +14,8 @@ from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.config import testcontainers_config
 from testcontainers.core.docker_client import DockerClient
 
+from kamayoq.settings import ENV_PREFIX
+
 PGVECTOR_IMAGE = (
     "pgvector/pgvector:0.8.7-pg18-trixie"
     "@sha256:ab49524d18df7200b74ac9a475e1db6297fc1eb57da4c214c63d10ecc4b754fa"
@@ -26,7 +28,6 @@ POSTGRES_DATA_DIR = "/var/lib/postgresql"
 POSTGRES_TMPFS_OPTIONS = "size=1g"
 REQUIRE_DOCKER_ENV = "KAMAYOQ_REQUIRE_DOCKER"
 """Variable that makes a missing Docker an error. Empty and 0 turn it off."""
-SETTINGS_ENV_PREFIX = "KAMAYOQ_"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -55,7 +56,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 def isolated_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove the kamayoq settings of the developer from the environment."""
     for name in list(os.environ):
-        if name.startswith(SETTINGS_ENV_PREFIX) and name != REQUIRE_DOCKER_ENV:
+        if name.startswith(ENV_PREFIX) and name != REQUIRE_DOCKER_ENV:
             monkeypatch.delenv(name)
 
 
