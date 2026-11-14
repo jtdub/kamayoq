@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
 from kamayoq.log import JsonFormatter
@@ -42,3 +43,10 @@ def test_exception_and_stack_are_included_in_json() -> None:
     fields = json.loads(JsonFormatter().format(record))
     assert "RuntimeError: boom" in fields["exc_info"]
     assert fields["stack_info"] == "Stack (most recent)"
+
+
+def test_time_is_utc_iso_8601_with_milliseconds() -> None:
+    """Write the time of the record in UTC, to the millisecond."""
+    created = datetime(2026, 11, 14, 4, 45, 25, 890123, tzinfo=UTC).timestamp()
+    fields = json.loads(JsonFormatter().format(make_record(created=created)))
+    assert fields["time"] == "2026-11-14T04:45:25.890+00:00"
