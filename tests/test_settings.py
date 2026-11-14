@@ -165,8 +165,8 @@ UNREADABLE = "unreadable.toml"
             "cannot read {path}: Permission denied",
             marks=pytest.mark.skipif(os.geteuid() == 0, reason="root reads mode 0"),
         ),
-        ("k.toml", b"[server]\nport = 8001\n", f"- server (KAMAYOQ_SERVER): {EXTRA}"),
-        ("k.toml", b'colour = "red"\n', f"- colour (KAMAYOQ_COLOUR): {EXTRA}"),
+        ("k.toml", b"[server]\nport = 8001\n", f"- server: {EXTRA}"),
+        ("k.toml", b'colour = "red"\n', f"- colour: {EXTRA}"),
     ],
     ids=[
         "empty",

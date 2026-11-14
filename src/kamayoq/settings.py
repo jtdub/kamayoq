@@ -100,12 +100,14 @@ class Settings(BaseSettings):
 
 
 def validation_message(error: ValidationError) -> str:
-    """Return one line for each error, with the field and its variable only."""
+    """Return one line for each error. An unknown key names no variable."""
     lines = ["Settings are not valid:"]
     for detail in error.errors(include_url=False, include_input=False):
         location = ".".join(str(part) for part in detail["loc"])
-        env_name = ENV_PREFIX + str(detail["loc"][0]).upper()
-        lines.append(f"- {location} ({env_name}): {detail['msg']}")
+        source = f" ({ENV_PREFIX}{str(detail['loc'][0]).upper()})"
+        if detail["type"] == "extra_forbidden":
+            source = ""
+        lines.append(f"- {location}{source}: {detail['msg']}")
     return "\n".join(lines)
 
 
