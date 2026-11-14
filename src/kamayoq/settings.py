@@ -1,11 +1,19 @@
 """Settings of kamayoq, read from KAMAYOQ_ environment variables."""
 
+import os
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, PostgresDsn, ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    TomlConfigSettingsSource,
+)
 
 ENV_PREFIX = "KAMAYOQ_"
+CONFIG_FILE_ENV = "KAMAYOQ_CONFIG_FILE"
 
 LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
 
@@ -16,8 +24,19 @@ class InvalidSettingsError(Exception):
     """Raise when the settings cannot load. The message is safe to print."""
 
 
+def config_file_path() -> Path | None:
+    """Return the resolved path in KAMAYOQ_CONFIG_FILE, or None if it is not set."""
+    value = os.environ.get(CONFIG_FILE_ENV)
+    if value is None:
+        return None
+    return Path(value).resolve()
+
+
 class Settings(BaseSettings):
-    """Validated settings of the kamayoq server."""
+    """Validated settings of the kamayoq server.
+
+    Environment variables win over the TOML file in KAMAYOQ_CONFIG_FILE.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
@@ -32,6 +51,22 @@ class Settings(BaseSettings):
     readiness_timeout: float = Field(default=2.0, gt=0)
     log_level: LogLevel = "INFO"
     api_docs: bool = False
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Read the environment, then the TOML file. Do not read a .env file."""
+        path = config_file_path()
+        if path is None:
+            return init_settings, env_settings
+        toml_settings = TomlConfigSettingsSource(settings_cls, toml_file=path)
+        return init_settings, env_settings, toml_settings
 
     @field_validator("log_level", mode="before")
     @classmethod

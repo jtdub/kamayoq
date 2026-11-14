@@ -1,10 +1,19 @@
 """Unit tests for the kamayoq settings."""
 
+from pathlib import Path
+
 import pytest
 
 from kamayoq.settings import InvalidSettingsError, load_settings
 
 DATABASE_URL = "postgresql://kamayoq:secret@db.example:5432/kamayoq"
+TOML_SETTINGS = """\
+host = "0.0.0.0"
+port = 8001
+readiness_timeout = 0.5
+log_level = "warning"
+api_docs = true
+"""
 
 
 @pytest.fixture
@@ -12,6 +21,13 @@ def database_url(monkeypatch: pytest.MonkeyPatch) -> str:
     """Set a valid KAMAYOQ_DATABASE_URL and return it."""
     monkeypatch.setenv("KAMAYOQ_DATABASE_URL", DATABASE_URL)
     return DATABASE_URL
+
+
+def config_file(monkeypatch: pytest.MonkeyPatch, path: Path, content: str) -> Path:
+    """Write a TOML file, point KAMAYOQ_CONFIG_FILE at it, and return the path."""
+    path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("KAMAYOQ_CONFIG_FILE", str(path))
+    return path
 
 
 def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None:
@@ -120,3 +136,16 @@ def test_lower_case_log_level_is_accepted(
     """Change a lower-case log level to upper case."""
     monkeypatch.setenv("KAMAYOQ_LOG_LEVEL", "debug")
     assert load_settings().log_level == "DEBUG"
+
+
+def test_toml_file_supplies_values(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Read each optional setting from the file in KAMAYOQ_CONFIG_FILE."""
+    config_file(monkeypatch, tmp_path / "kamayoq.toml", TOML_SETTINGS)
+    settings = load_settings()
+    assert settings.host == "0.0.0.0"
+    assert settings.port == 8001
+    assert settings.readiness_timeout == 0.5
+    assert settings.log_level == "WARNING"
+    assert settings.api_docs is True
