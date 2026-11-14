@@ -149,3 +149,12 @@ def test_toml_file_supplies_values(
     assert settings.readiness_timeout == 0.5
     assert settings.log_level == "WARNING"
     assert settings.api_docs is True
+
+
+def test_env_value_wins_over_toml_value(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Use the environment variable when the TOML file has the same setting."""
+    config_file(monkeypatch, tmp_path / "kamayoq.toml", TOML_SETTINGS)
+    monkeypatch.setenv("KAMAYOQ_PORT", "9000")
+    assert load_settings().port == 9000
