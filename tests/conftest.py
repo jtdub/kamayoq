@@ -14,6 +14,8 @@ from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.config import testcontainers_config
 from testcontainers.core.docker_client import DockerClient
 
+from kamayoq.settings import ENV_PREFIX
+
 PGVECTOR_IMAGE = (
     "pgvector/pgvector:0.8.7-pg18-trixie"
     "@sha256:ab49524d18df7200b74ac9a475e1db6297fc1eb57da4c214c63d10ecc4b754fa"
@@ -48,6 +50,14 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.integration)
         if item.get_closest_marker("integration") is None:
             item.add_marker(pytest.mark.unit)
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove the kamayoq settings of the developer from the environment."""
+    for name in list(os.environ):
+        if name.startswith(ENV_PREFIX) and name != REQUIRE_DOCKER_ENV:
+            monkeypatch.delenv(name)
 
 
 def docker_unavailable_reason() -> str | None:
