@@ -1,0 +1,2 @@
+Added CONTRIBUTING.md, CODE_OF_CONDUCT.md, and SECURITY.md. Report a vulnerability in private through the Security tab, not in an issue.
+Added bug and feature issue forms. New issues get the needs-human label, so the crew loop waits for a person to triage them.
