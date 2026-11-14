@@ -22,7 +22,7 @@ dev = [
     "pyyaml>=6.0.3",
     "ruff>=0.17",
     "testcontainers>=4.15",
-    "types-pyyaml>=6.0.12.20261113",
+    "types-pyyaml>=6.0.12.20261103",
 ]
 
 [build-system]
@@ -31,6 +31,7 @@ build-backend = "uv_build"
 
 [tool.uv]
 required-version = ">=0.11.33,<0.12"
+exclude-newer = "7 days"
 
 [tool.uv.workspace]
 members = ["packages/*"]

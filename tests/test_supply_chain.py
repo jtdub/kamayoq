@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 README = PROJECT_ROOT / "README.md"
+UV_LOCK = PROJECT_ROOT / "uv.lock"
 UV_VERSION = "0.11.33"
 
 
@@ -25,6 +26,11 @@ def load_yaml(path: Path) -> dict[str, Any]:
 def load_pyproject() -> dict[str, Any]:
     """Return the parsed pyproject.toml."""
     return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+
+
+def load_uv_lock() -> dict[str, Any]:
+    """Return the parsed uv.lock."""
+    return tomllib.loads(UV_LOCK.read_text(encoding="utf-8"))
 
 
 def workflow_paths() -> list[Path]:
@@ -72,3 +78,9 @@ def test_every_setup_uv_step_uses_uv_0_11_33() -> None:
     assert setup_uv_steps
     for step in setup_uv_steps:
         assert step["with"]["version"] == UV_VERSION
+
+
+def test_uv_rejects_packages_newer_than_seven_days() -> None:
+    """Lock no release that is less than 7 days old."""
+    assert load_pyproject()["tool"]["uv"]["exclude-newer"] == "7 days"
+    assert load_uv_lock()["options"]["exclude-newer-span"] == "P7D"
