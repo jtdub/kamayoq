@@ -173,7 +173,7 @@ def test_supply_chain_workflow_runs_on_pr_push_and_daily() -> None:
 
 
 def test_supply_chain_workflow_keeps_read_only_token() -> None:
-    """Give the token read access only, and let no step fail without a red run."""
+    """Give the token read access only. Let no step fail without a red run."""
     workflow = load_yaml(SUPPLY_CHAIN_WORKFLOW)
     assert workflow["permissions"] == {"contents": "read"}
     assert set(workflow["jobs"]) == {"audit", "sbom"}
