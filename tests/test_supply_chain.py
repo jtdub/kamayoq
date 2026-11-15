@@ -81,10 +81,14 @@ def step_using(job: dict[str, Any], action: str) -> dict[str, Any]:
 
 
 def test_project_requires_uv_0_11() -> None:
-    """Require uv 0.11.33 or a later 0.11 release, in the config and the README."""
+    """Require uv 0.11.33 or a later 0.11 release, in the config and the README.
+
+    The uv_build check reads only the lower limit. Dependabot moves the upper limit.
+    """
     pyproject = load_pyproject()
     assert pyproject["tool"]["uv"]["required-version"] == ">=0.11.33,<0.12"
-    assert pyproject["build-system"]["requires"] == ["uv_build>=0.11.33,<0.12.0"]
+    [build_requirement] = pyproject["build-system"]["requires"]
+    assert build_requirement.startswith("uv_build>=0.11.33,")
     assert "0.11.33 or a later 0.11 release." in README.read_text(encoding="utf-8")
 
 
