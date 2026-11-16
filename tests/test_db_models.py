@@ -5,10 +5,17 @@ from typing import Any
 
 import pytest
 from db_rules import org_scope_errors
-from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid, create_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.schema import CreateTable
 
-from kamayoq.db.base import NAMING_CONVENTION, OrgScoped
+from kamayoq.db.base import (
+    NAMING_CONVENTION,
+    Classified,
+    DataClass,
+    OrgScoped,
+    RecordColumns,
+)
 from kamayoq.db.models import Base
 
 
@@ -107,3 +114,34 @@ def test_org_scoped_mixin_gives_a_valid_org_id(scratch_metadata: MetaData) -> No
         __tablename__ = "notes"
 
     assert org_scope_errors(scratch_metadata) == []
+
+
+def test_data_class_values_are_the_four_classes() -> None:
+    """Give the four data classes, from the least to the most strict."""
+    assert [member.value for member in DataClass] == [
+        "public",
+        "internal",
+        "confidential",
+        "phi",
+    ]
+
+
+def test_classified_column_is_not_null_varchar_with_check(
+    scratch_metadata: MetaData,
+) -> None:
+    """Make data_class a NOT NULL VARCHAR(32) with a CHECK and no default."""
+
+    class Note(Classified, RecordColumns, ScratchBase):
+        __tablename__ = "notes"
+
+    notes = scratch_metadata.tables["notes"]
+    column = notes.c.data_class
+    dialect = create_engine("postgresql+psycopg://").dialect
+    assert column.nullable is False
+    assert column.default is None
+    assert column.server_default is None
+    assert column.type.compile(dialect=dialect) == "VARCHAR(32)"
+    assert (
+        "CONSTRAINT ck_notes_data_class CHECK (data_class IN "
+        "('public', 'internal', 'confidential', 'phi'))"
+    ) in str(CreateTable(notes).compile(dialect=dialect))

@@ -1,13 +1,16 @@
 """Declarative base and column mixins of the kamayoq models.
 
 Each table carries an org_id, through OrgScoped. The organizations table is the only
-exception.
+exception. Each table that holds content carries a data_class, through Classified.
 """
 
+import enum
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
+from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, MetaData, Uuid, func
+from sqlalchemy import DateTime, Enum, ForeignKey, MetaData, Uuid, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING_CONVENTION = {
@@ -21,6 +24,20 @@ NAMING_CONVENTION = {
 
 ORG_ID_EXEMPT_TABLES = frozenset({"organizations"})
 """Tables that have no org_id column."""
+
+
+class DataClass(StrEnum):
+    """Class of the data that a record holds, from the least to the most strict."""
+
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    PHI = "phi"
+
+
+def enum_values(enum_class: type[enum.Enum]) -> Sequence[str]:
+    """Return the value of each member, so that the database stores the values."""
+    return [member.value for member in enum_class]
 
 
 class Base(DeclarativeBase):
@@ -51,4 +68,23 @@ class OrgScoped(RecordColumns):
 
     org_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="RESTRICT"), index=True
+    )
+
+
+class Classified:
+    """Add a NOT NULL data_class with no default.
+
+    Each table that holds content uses this mixin, so that each writer must choose a
+    class. The database rejects a value that is not a DataClass value.
+    """
+
+    data_class: Mapped[DataClass] = mapped_column(
+        Enum(
+            DataClass,
+            name="data_class",
+            native_enum=False,
+            create_constraint=True,
+            length=32,
+            values_callable=enum_values,
+        )
     )
