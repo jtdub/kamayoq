@@ -11,6 +11,7 @@ from db_rules import classification_errors, org_scope_errors
 from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid, create_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.schema import CreateTable
+from sqlalchemy.types import TypeEngine
 
 from kamayoq.db.base import (
     NAMING_CONVENTION,
@@ -54,9 +55,24 @@ def scratch_metadata() -> Iterator[MetaData]:
     ScratchBase.metadata.clear()
 
 
-def org_table(metadata: MetaData, name: str, *org_id: Column[Any]) -> Table:
-    """Add a table with a primary key and the given org_id column."""
-    return Table(name, metadata, Column("id", Integer, primary_key=True), *org_id)
+def restrict() -> ForeignKey:
+    """Return a foreign key to organizations.id with ON DELETE RESTRICT."""
+    return ForeignKey("organizations.id", ondelete="RESTRICT")
+
+
+def org_id(
+    *foreign_key: ForeignKey,
+    type_: type[TypeEngine[Any]] = Uuid,
+    nullable: bool = False,
+    index: bool = True,
+) -> Column[Any]:
+    """Return an org_id column with the given parts."""
+    return Column("org_id", type_, *foreign_key, nullable=nullable, index=index)
+
+
+def org_table(metadata: MetaData, name: str, *columns: Column[Any]) -> Table:
+    """Add a table with an integer primary key and the given columns."""
+    return Table(name, metadata, Column("id", Integer, primary_key=True), *columns)
 
 
 def test_each_table_has_a_valid_org_id() -> None:
@@ -69,54 +85,11 @@ def test_org_scope_errors_report_each_missing_part(
 ) -> None:
     """Name each table and each part of org_id that it lacks."""
     org_table(scratch_metadata, "no_org_id")
-    org_table(
-        scratch_metadata,
-        "nullable_org_id",
-        Column(
-            "org_id",
-            Uuid,
-            ForeignKey("organizations.id", ondelete="RESTRICT"),
-            nullable=True,
-            index=True,
-        ),
-    )
-    org_table(
-        scratch_metadata,
-        "integer_org_id",
-        Column(
-            "org_id",
-            Integer,
-            ForeignKey("organizations.id", ondelete="RESTRICT"),
-            nullable=False,
-            index=True,
-        ),
-    )
-    org_table(
-        scratch_metadata,
-        "no_foreign_key",
-        Column("org_id", Uuid, nullable=False, index=True),
-    )
-    org_table(
-        scratch_metadata,
-        "no_restrict",
-        Column(
-            "org_id",
-            Uuid,
-            ForeignKey("organizations.id"),
-            nullable=False,
-            index=True,
-        ),
-    )
-    org_table(
-        scratch_metadata,
-        "no_index",
-        Column(
-            "org_id",
-            Uuid,
-            ForeignKey("organizations.id", ondelete="RESTRICT"),
-            nullable=False,
-        ),
-    )
+    org_table(scratch_metadata, "nullable_org_id", org_id(restrict(), nullable=True))
+    org_table(scratch_metadata, "integer_org_id", org_id(restrict(), type_=Integer))
+    org_table(scratch_metadata, "no_foreign_key", org_id())
+    org_table(scratch_metadata, "no_restrict", org_id(ForeignKey("organizations.id")))
+    org_table(scratch_metadata, "no_index", org_id(restrict(), index=False))
     assert org_scope_errors(scratch_metadata) == [
         "integer_org_id: org_id is not a UUID.",
         "no_foreign_key: org_id has no foreign key to organizations.id.",
