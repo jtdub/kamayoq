@@ -662,6 +662,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
 
@@ -693,6 +694,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.8,<2.2" },
+    { name = "typing-extensions", specifier = ">=4.16" },
     { name = "uvicorn", specifier = ">=0.54,<0.55" },
 ]
 
