@@ -3,18 +3,15 @@
 import json
 import subprocess
 import sys
-from collections.abc import Iterator
 from typing import Any
 
-import pytest
 from db_rules import classification_errors, org_scope_errors
+from scratch import ScratchBase
 from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid, create_engine
-from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.schema import CreateTable
 from sqlalchemy.types import TypeEngine
 
 from kamayoq.db.base import (
-    NAMING_CONVENTION,
     Classified,
     DataClass,
     OrgScoped,
@@ -38,21 +35,6 @@ if sys.argv[1:] == ["--all-modules"]:
 print(json.dumps(sorted(Base.metadata.tables)))
 """
 """Child script that prints the names of the tables in Base.metadata."""
-
-
-class ScratchBase(DeclarativeBase):
-    """Hold the test models, so that Base.metadata holds only the real tables."""
-
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
-
-
-@pytest.fixture(autouse=True)
-def scratch_metadata() -> Iterator[MetaData]:
-    """Give each test a ScratchBase with a copy of organizations only."""
-    Base.metadata.tables["organizations"].to_metadata(ScratchBase.metadata)
-    yield ScratchBase.metadata
-    ScratchBase.registry.dispose()
-    ScratchBase.metadata.clear()
 
 
 def restrict() -> ForeignKey:

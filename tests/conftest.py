@@ -8,12 +8,17 @@ import os
 import secrets
 from collections.abc import Iterator
 
+import psycopg
 import pytest
 from docker.errors import DockerException
+from psycopg import sql
+from scratch import ScratchBase
+from sqlalchemy import MetaData
 from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.config import testcontainers_config
 from testcontainers.core.docker_client import DockerClient
 
+from kamayoq.db.models import Base
 from kamayoq.settings import ENV_PREFIX
 
 PGVECTOR_IMAGE = (
@@ -91,3 +96,26 @@ def postgres() -> Iterator[PostgresContainer]:
     ).with_tmpfs_mount(POSTGRES_DATA_DIR, POSTGRES_TMPFS_OPTIONS)
     with container:
         yield container
+
+
+@pytest.fixture
+def empty_database_url(postgres: PostgresContainer) -> Iterator[str]:
+    """Create a new empty database for one test, and yield its libpq URL."""
+    name = "kamayoq_test_" + secrets.token_hex(8)
+    server_url = postgres.get_connection_url()
+    with psycopg.connect(server_url, autocommit=True) as connection:
+        connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    yield server_url.rsplit("/", 1)[0] + "/" + name
+    with psycopg.connect(server_url, autocommit=True) as connection:
+        connection.execute(
+            sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+        )
+
+
+@pytest.fixture
+def scratch_metadata() -> Iterator[MetaData]:
+    """Give the test a ScratchBase with a copy of organizations only."""
+    Base.metadata.tables["organizations"].to_metadata(ScratchBase.metadata)
+    yield ScratchBase.metadata
+    ScratchBase.registry.dispose()
+    ScratchBase.metadata.clear()

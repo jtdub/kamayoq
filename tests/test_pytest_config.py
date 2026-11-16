@@ -9,7 +9,11 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTGRES_TESTS = "tests/test_postgres.py"
-INTEGRATION_TEST_FILES = (POSTGRES_TESTS, "tests/test_readyz_postgres.py")
+INTEGRATION_TEST_FILES = (
+    POSTGRES_TESTS,
+    "tests/test_readyz_postgres.py",
+    "tests/test_db_postgres.py",
+)
 
 
 def run_pytest(
