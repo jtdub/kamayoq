@@ -98,6 +98,14 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def require_one_host(cls, value: PostgresDsn) -> PostgresDsn:
+        """Reject a URL with more than one host. The message has no URL."""
+        if len(value.hosts()) > 1:
+            raise ValueError("kamayoq supports one database host only")
+        return value
+
 
 def validation_message(error: ValidationError) -> str:
     """Return one line for each error. An unknown key names no variable."""
