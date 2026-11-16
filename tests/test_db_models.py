@@ -7,7 +7,19 @@ from typing import Any
 
 from db_rules import classification_errors, org_scope_errors
 from scratch import ScratchBase
-from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid, create_engine
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    UniqueConstraint,
+    Uuid,
+    create_engine,
+)
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateTable
 from sqlalchemy.types import TypeEngine
 
@@ -89,6 +101,37 @@ def test_org_scoped_mixin_gives_a_valid_org_id(scratch_metadata: MetaData) -> No
         __tablename__ = "notes"
 
     assert org_scope_errors(scratch_metadata) == []
+
+
+def test_composite_constraints_that_start_with_org_id_get_distinct_names(
+    scratch_metadata: MetaData,
+) -> None:
+    """Name each unique constraint and each index after all of its columns."""
+
+    class Note(OrgScoped, ScratchBase):
+        __tablename__ = "notes"
+        __table_args__ = (
+            UniqueConstraint("org_id", "title"),
+            UniqueConstraint("org_id", "slug"),
+            Index(None, "org_id", "title"),
+            Index(None, "org_id", "slug"),
+        )
+
+        title: Mapped[str] = mapped_column(String(200))
+        slug: Mapped[str] = mapped_column(String(200))
+
+    notes = scratch_metadata.tables["notes"]
+    unique_names = sorted(
+        str(constraint.name)
+        for constraint in notes.constraints
+        if isinstance(constraint, UniqueConstraint)
+    )
+    assert unique_names == ["uq_notes_org_id_slug", "uq_notes_org_id_title"]
+    assert sorted(str(index.name) for index in notes.indexes) == [
+        "ix_notes_org_id",
+        "ix_notes_org_id_notes_slug",
+        "ix_notes_org_id_notes_title",
+    ]
 
 
 def test_data_class_values_are_the_four_classes() -> None:
