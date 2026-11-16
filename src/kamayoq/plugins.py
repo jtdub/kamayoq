@@ -104,10 +104,12 @@ def protocol_mismatches(cls: type, protocol: type) -> list[str]:
             problems.append(f"{member} must be async")
         elif actual_async and not expected_async:
             problems.append(f"{member} must not be async")
-        elif (shape := parameter_shape(actual)) != parameter_shape(expected):
-            problems.append(
-                f"{member} parameters are {shape}, expected {parameter_shape(expected)}"
-            )
+        else:
+            shape, expected_shape = parameter_shape(actual), parameter_shape(expected)
+            if shape != expected_shape:
+                problems.append(
+                    f"{member} parameters are {shape}, expected {expected_shape}"
+                )
     return problems
 
 
