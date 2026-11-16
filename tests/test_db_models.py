@@ -1,5 +1,8 @@
 """Unit tests for the org_id and data_class rules of the kamayoq models."""
 
+import json
+import subprocess
+import sys
 from collections.abc import Iterator
 from typing import Any
 
@@ -17,6 +20,23 @@ from kamayoq.db.base import (
     RecordColumns,
 )
 from kamayoq.db.models import Base
+
+PRINT_MAPPED_TABLES = """
+import importlib
+import json
+import pkgutil
+import sys
+
+import kamayoq
+from kamayoq.db.models import Base
+
+if sys.argv[1:] == ["--all-modules"]:
+    for module in pkgutil.walk_packages(kamayoq.__path__, "kamayoq."):
+        if not module.name.startswith("kamayoq.migrations"):
+            importlib.import_module(module.name)
+print(json.dumps(sorted(Base.metadata.tables)))
+"""
+"""Child script that prints the names of the tables in Base.metadata."""
 
 
 class ScratchBase(DeclarativeBase):
@@ -167,3 +187,22 @@ def test_classification_errors_report_an_unlisted_table(
         "notes: has no data_class column from Classified,"
         " and UNCLASSIFIED_TABLES does not list it.",
     ]
+
+
+def mapped_tables(*args: str) -> list[str]:
+    """Return the tables that a child process finds in Base.metadata."""
+    result = subprocess.run(
+        [sys.executable, "-c", PRINT_MAPPED_TABLES, *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    tables: list[str] = json.loads(result.stdout)
+    return tables
+
+
+def test_each_mapped_table_is_reachable_from_models() -> None:
+    """Map no table that an import of kamayoq.db.models alone does not map."""
+    from_models = mapped_tables()
+    assert "organizations" in from_models
+    assert mapped_tables("--all-modules") == from_models
