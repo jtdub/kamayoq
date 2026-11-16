@@ -8,9 +8,11 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "The kamayoq Authors" }]
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.1,<1.21",
     "fastapi>=0.162,<0.163",
     "psycopg[binary]>=3.3.8",
     "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.8,<2.2",
     "uvicorn>=0.54,<0.55",
 ]
 
