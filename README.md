@@ -151,10 +151,13 @@ Follow these rules for each new model:
 3. If the table holds no content, add the table name and the reason to `UNCLASSIFIED_TABLES` in `kamayoq.db.base`.
 4. Include `org_id` in each unique constraint.
 5. Put the model in `kamayoq.db.models`, or import it there.
-6. Start a database at head, and set `KAMAYOQ_DATABASE_URL` to it.
-7. Run `uv run alembic revision --autogenerate -m "<message>"`.
-8. Remove the `# ###` comment lines from the new file. The pre-commit hooks reject them.
-9. Read the new file, and run `uv run pytest`.
+6. Start an empty Postgres 18 database for development.
+7. Set `KAMAYOQ_DATABASE_URL` to that database.
+8. Run `uv run alembic upgrade head`. The database then has the schema of the last migration.
+9. Run `uv run alembic revision --autogenerate -m "<message>"`. Alembic compares the models with the database and writes the new file.
+10. Remove the `# ###` comment lines from the new file. The pre-commit hooks reject them.
+11. Read the new file.
+12. Run `uv run pytest`.
 
 The tests fail when a model has no valid `org_id`, or has no `data_class` and is not in `UNCLASSIFIED_TABLES`.
 
