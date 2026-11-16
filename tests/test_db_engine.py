@@ -2,6 +2,7 @@
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import DBAPIError, StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -54,3 +55,17 @@ def test_statement_error_hides_parameters() -> None:
     assert isinstance(error, StatementError)
     assert "SQL parameters hidden" in str(error)
     assert ROW_VALUE not in str(error)
+
+
+def test_lifespan_disposes_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dispose of the engine one time when the app stops."""
+    disposed: list[AsyncEngine] = []
+
+    async def record_dispose(self: AsyncEngine, close: bool = True) -> None:
+        disposed.append(self)
+
+    monkeypatch.setattr(AsyncEngine, "dispose", record_dispose)
+    app = create_app(Settings(database_url=f"postgresql://u:{PASSWORD}@h:5/d"))
+    with TestClient(app):
+        assert disposed == []
+    assert disposed == [app.state.engine]

@@ -1,5 +1,7 @@
 """Factory of the kamayoq FastAPI app."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from importlib.metadata import version
 
 from fastapi import FastAPI
@@ -12,12 +14,20 @@ from kamayoq.settings import Settings
 def create_app(settings: Settings) -> FastAPI:
     """Return the API app for these settings.
 
-    The app holds one database engine and one session maker in app.state.
+    The app holds one database engine and one session maker in app.state. It
+    disposes of the engine when it stops.
     """
     engine = create_db_engine(sqlalchemy_url(settings))
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await engine.dispose()
+
     docs = settings.api_docs
     app = FastAPI(
         title="kamayoq",
+        lifespan=lifespan,
         version=version("kamayoq"),
         docs_url="/docs" if docs else None,
         redoc_url="/redoc" if docs else None,
