@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from db_rules import org_scope_errors
+from db_rules import classification_errors, org_scope_errors
 from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid, create_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.schema import CreateTable
@@ -145,3 +145,25 @@ def test_classified_column_is_not_null_varchar_with_check(
         "CONSTRAINT ck_notes_data_class CHECK (data_class IN "
         "('public', 'internal', 'confidential', 'phi'))"
     ) in str(CreateTable(notes).compile(dialect=dialect))
+
+
+def test_each_table_is_classified_or_listed() -> None:
+    """Report no error for the tables of Base.metadata."""
+    assert classification_errors(Base.metadata) == []
+
+
+def test_classification_errors_report_an_unlisted_table(
+    scratch_metadata: MetaData,
+) -> None:
+    """Name a table that has no data_class and no entry in UNCLASSIFIED_TABLES."""
+
+    class Note(OrgScoped, ScratchBase):
+        __tablename__ = "notes"
+
+    class ClassifiedNote(Classified, OrgScoped, ScratchBase):
+        __tablename__ = "classified_notes"
+
+    assert classification_errors(scratch_metadata) == [
+        "notes: has no data_class column from Classified,"
+        " and UNCLASSIFIED_TABLES does not list it.",
+    ]

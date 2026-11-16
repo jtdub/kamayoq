@@ -1,11 +1,11 @@
-"""Checks of the org_id rule, on the models or on a live schema."""
+"""Checks of the org_id and data_class rules, on the models or on a live schema."""
 
 from collections.abc import Collection
 from dataclasses import dataclass
 
-from sqlalchemy import Connection, Inspector, MetaData, Table, Uuid, inspect
+from sqlalchemy import Connection, Enum, Inspector, MetaData, Table, Uuid, inspect
 
-from kamayoq.db.base import ORG_ID_EXEMPT_TABLES
+from kamayoq.db.base import ORG_ID_EXEMPT_TABLES, UNCLASSIFIED_TABLES, DataClass
 
 ORG_ID = "org_id"
 ORG_ID_TARGET = "organizations.id"
@@ -109,4 +109,24 @@ def live_org_scope_errors(connection: Connection, exempt: Collection[str]) -> li
         for name in sorted(inspector.get_table_names(schema=LIVE_SCHEMA))
         if name not in exempt
         for error in org_id_errors(name, live_org_id(inspector, name))
+    ]
+
+
+def has_data_class(table: Table) -> bool:
+    """Return True if the table has the data_class column of Classified."""
+    column = table.c.get("data_class")
+    return (
+        column is not None
+        and isinstance(column.type, Enum)
+        and column.type.enum_class is DataClass
+    )
+
+
+def classification_errors(metadata: MetaData) -> list[str]:
+    """Return one line for each table with no data_class that is not listed."""
+    return [
+        f"{name}: has no data_class column from Classified,"
+        " and UNCLASSIFIED_TABLES does not list it."
+        for name, table in sorted(metadata.tables.items())
+        if name not in UNCLASSIFIED_TABLES and not has_data_class(table)
     ]

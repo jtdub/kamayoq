@@ -6,7 +6,7 @@ exception. Each table that holds content carries a data_class, through Classifie
 
 import enum
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from enum import StrEnum
 
@@ -24,6 +24,11 @@ NAMING_CONVENTION = {
 
 ORG_ID_EXEMPT_TABLES = frozenset({"organizations"})
 """Tables that have no org_id column."""
+
+UNCLASSIFIED_TABLES: Mapping[str, str] = {
+    "organizations": "Holds the org name only, not content.",
+}
+"""Tables with no data_class column, each with the reason that it holds no content."""
 
 
 class DataClass(StrEnum):
