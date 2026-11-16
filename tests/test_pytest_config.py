@@ -13,6 +13,7 @@ INTEGRATION_TEST_FILES = (
     POSTGRES_TESTS,
     "tests/test_readyz_postgres.py",
     "tests/test_db_postgres.py",
+    "tests/test_migrations.py",
 )
 
 

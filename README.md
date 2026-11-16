@@ -122,6 +122,45 @@ GitHub sends a notice of a failed daily run to the user who last changed the sch
 
 Dependabot runs uv 0.11. If its log at Insights > Dependency graph > Dependabot shows a uv version error, update `required-version` in `pyproject.toml`.
 
+## Database
+
+kamayoq needs Postgres 18 or later. The role in `KAMAYOQ_DATABASE_URL` must own the database or have the CREATE privilege on the `public` schema.
+
+Run the migrations before you start the server for the first time, and after each upgrade of kamayoq:
+
+```bash
+KAMAYOQ_DATABASE_URL=postgresql://kamayoq:CHANGE_ME@127.0.0.1:5432/kamayoq uv run alembic upgrade head
+```
+
+The first migration creates the `organizations` table and one organization with the name `default`. Do not delete the `default` organization. kamayoq does not prevent this delete yet.
+
+When a setting is missing or not valid, the command prints one line that starts with `FAILED: Settings are not valid:`, then the name of each bad setting. The exit status is 255.
+
+WARNING: `alembic downgrade base` deletes all kamayoq data. Make a backup before you run it.
+
+```bash
+KAMAYOQ_DATABASE_URL=postgresql://kamayoq:CHANGE_ME@127.0.0.1:5432/kamayoq uv run alembic downgrade base
+```
+
+### Add a table
+
+Follow these rules for each new model:
+
+1. Inherit `OrgScoped`. It adds `id`, `created_at`, `updated_at`, and `org_id`.
+2. Add `Classified` to a table that holds content. It adds `data_class`, with no default.
+3. If the table holds no content, add the table name and the reason to `UNCLASSIFIED_TABLES` in `kamayoq.db.base`.
+4. Include `org_id` in each unique constraint.
+5. Put the model in `kamayoq.db.models`, or import it there.
+6. Start an empty Postgres 18 database for development.
+7. Set `KAMAYOQ_DATABASE_URL` to that database.
+8. Run `uv run alembic upgrade head`. The database then has the schema of the last migration.
+9. Run `uv run alembic revision --autogenerate -m "<message>"`. Alembic compares the models with the database and writes the new file.
+10. Remove the `# ###` comment lines from the new file. The pre-commit hooks reject them.
+11. Read the new file.
+12. Run `uv run pytest`.
+
+The tests fail when a model has no valid `org_id`, or has no `data_class` and is not in `UNCLASSIFIED_TABLES`.
+
 ## Run the API server
 
 Set `KAMAYOQ_DATABASE_URL` to a Postgres URL. Then run this command:
