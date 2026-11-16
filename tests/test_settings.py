@@ -86,6 +86,19 @@ def test_url_without_host_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "empty host" in message
 
 
+def test_database_url_with_two_hosts_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a URL with more than one host. The message shows no password."""
+    monkeypatch.setenv(
+        "KAMAYOQ_DATABASE_URL", "postgresql://u:SEKRET@h1:5432,h2:5432/db"
+    )
+    message = load_error()
+    assert "- database_url (KAMAYOQ_DATABASE_URL): " in message
+    assert "kamayoq supports one database host only" in message
+    assert "SEKRET" not in message
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
