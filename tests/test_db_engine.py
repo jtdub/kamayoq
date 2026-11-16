@@ -2,13 +2,15 @@
 
 import psycopg
 import pytest
+from sqlalchemy.exc import DBAPIError, StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from kamayoq.api.app import create_app
-from kamayoq.db.engine import sqlalchemy_url, to_sqlalchemy_url
+from kamayoq.db.engine import create_db_engine, sqlalchemy_url, to_sqlalchemy_url
 from kamayoq.settings import Settings
 
 PASSWORD = "SEKRET-pw"
+ROW_VALUE = "SECRET-row-value"
 
 
 @pytest.mark.parametrize("scheme", ["postgresql", "postgres"])
@@ -35,3 +37,20 @@ def test_create_app_does_not_connect(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(app.state.sessionmaker, async_sessionmaker)
     assert app.state.sessionmaker.kw["bind"] is app.state.engine
     assert app.state.sessionmaker.kw["expire_on_commit"] is False
+
+
+def test_statement_error_hides_parameters() -> None:
+    """Keep the bound values of a statement out of a database error."""
+    engine = create_db_engine(to_sqlalchemy_url("postgresql://u@h:5/d")).sync_engine
+    assert engine.hide_parameters is True
+    error = DBAPIError.instance(
+        "INSERT INTO notes (body) VALUES (%(body)s)",
+        {"body": ROW_VALUE},
+        ValueError("cannot adapt the value"),
+        psycopg.Error,
+        hide_parameters=engine.hide_parameters,
+        dialect=engine.dialect,
+    )
+    assert isinstance(error, StatementError)
+    assert "SQL parameters hidden" in str(error)
+    assert ROW_VALUE not in str(error)

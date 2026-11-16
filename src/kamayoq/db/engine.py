@@ -28,8 +28,12 @@ def sqlalchemy_url(settings: Settings) -> URL:
 
 
 def create_db_engine(url: URL, **options: Any) -> AsyncEngine:
-    """Return an async engine. It does not connect until the first query."""
-    return create_async_engine(url, **options)
+    """Return an async engine. It does not connect until the first query.
+
+    A database error from the engine shows no bound parameters, so that no row
+    value goes into a log.
+    """
+    return create_async_engine(url, hide_parameters=True, **options)
 
 
 def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
