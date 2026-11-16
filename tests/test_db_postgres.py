@@ -48,14 +48,11 @@ def scratch_schema(scratch_metadata: MetaData, sync_engine: Engine) -> Engine:
 
 
 def insert_note(engine: Engine, data_class: str | None) -> None:
-    """Insert one note of the org, with this data_class, or with none."""
-    columns, values = ("org_id", ":org_id")
-    if data_class is not None:
-        columns, values = ("org_id, data_class", ":org_id, :data_class")
+    """Insert one note of the org with this data_class, in raw SQL."""
     with engine.begin() as connection:
         connection.execute(
-            text(f"INSERT INTO notes ({columns}) VALUES ({values})"),
-            {"org_id": ORG_ID, "data_class": data_class},
+            text("INSERT INTO notes (org_id, data_class) VALUES (:org_id, :class)"),
+            {"org_id": ORG_ID, "class": data_class},
         )
 
 
