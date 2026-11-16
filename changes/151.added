@@ -1,0 +1,2 @@
+Added database migrations. Run `alembic upgrade head` to create the tables and the default organization.
+Added the Database section to the README. kamayoq needs Postgres 18 or later.
