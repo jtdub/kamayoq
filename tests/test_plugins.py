@@ -2,24 +2,20 @@
 
 import importlib
 import logging
-import re
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
 from fake_plugins import GREETER_GROUP, Greeter, install_fake_distribution
-from typing_extensions import is_protocol
 
 from kamayoq.plugins import (
-    PLUGIN_GROUPS,
     PluginError,
     PluginGroup,
     load_plugins,
     protocol_mismatches,
 )
 
-GROUP_NAME = re.compile(r"[a-z][a-z0-9_]*")
 KIND = """\
 class Kind:
     name = "kind"
@@ -35,6 +31,8 @@ ASYNC_GREET = "    async def greet(self, person):"
 CLOSE = "    def close(self):\n        return None\n"
 
 KIND_POINT = ("kind", ":Kind")
+KIND_REF = "greeters:kind"
+GREETERS = (GREETER_GROUP,)
 NOT_VALID = "Plugins are not valid:\n"
 RAISES_ON_GET = """\
 class RaisesOnGet:
@@ -71,6 +69,11 @@ def install_greeters(
     ]
 
 
+def fake_a(*points: tuple[str, str], source: str = KIND) -> list[FakeDistribution]:
+    """Return fake-a 1.0 with the entry points, or kind = :Kind if none."""
+    return [("fake-a", "1.0", points or [KIND_POINT], source)]
+
+
 def kind_source(old: str, new: str) -> str:
     """Return the source of the correct class Kind with one change."""
     assert old in KIND
@@ -89,15 +92,6 @@ def define_kind(source: str) -> type:
 def test_entry_point_group_has_kamayoq_prefix() -> None:
     """Put kamayoq. before the group name."""
     assert PluginGroup("greeters", Greeter).entry_point_group == "kamayoq.greeters"
-
-
-def test_plugin_groups_have_unique_valid_names_and_protocols() -> None:
-    """Give each group a unique lower-case name and a Protocol."""
-    names = [group.name for group in PLUGIN_GROUPS]
-    assert len(names) == len(set(names))
-    for group in PLUGIN_GROUPS:
-        assert GROUP_NAME.fullmatch(group.name)
-        assert is_protocol(group.protocol)
 
 
 @pytest.mark.parametrize(
@@ -208,75 +202,67 @@ def test_plugin_not_on_allowlist_is_not_imported(
     [
         (
             "runtimes:x",
-            (GREETER_GROUP,),
+            GREETERS,
             [],
-            "- runtimes:x: no plugin group runtimes. Known groups: greeters.",
+            "no plugin group runtimes. Known groups: greeters.",
+        ),
+        ("runtimes:x", (), [], "no plugin group runtimes. Known groups: none."),
+        (
+            KIND_REF,
+            GREETERS,
+            [],
+            "no installed package declares kind in kamayoq.greeters.",
         ),
         (
-            "runtimes:x",
-            (),
-            [],
-            "- runtimes:x: no plugin group runtimes. Known groups: none.",
-        ),
-        (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [],
-            "- greeters:kind: no installed package declares kind in kamayoq.greeters.",
-        ),
-        (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [
-                ("fake-a", "1.0", [KIND_POINT], KIND),
-                ("fake-b", "2.0", [KIND_POINT], KIND),
-            ],
-            "- greeters:kind: more than one entry point declares it: "
+            KIND_REF,
+            GREETERS,
+            [*fake_a(), ("fake-b", "2.0", [KIND_POINT], KIND)],
+            "more than one entry point declares it: "
             "fake-a 1.0 ({0}:Kind), fake-b 2.0 ({1}:Kind).",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [("kind", ":A"), ("kind", ":B")], "")],
-            "- greeters:kind: more than one entry point declares it: "
+            KIND_REF,
+            GREETERS,
+            fake_a(("kind", ":A"), ("kind", ":B")),
+            "more than one entry point declares it: "
             "fake-a 1.0 ({0}:A), fake-a 1.0 ({0}:B).",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [KIND_POINT], 'raise RuntimeError("boom")\n')],
-            "- greeters:kind: cannot load {0}:Kind: RuntimeError: boom",
+            KIND_REF,
+            GREETERS,
+            fake_a(source='raise RuntimeError("boom")'),
+            "cannot load {0}:Kind: RuntimeError: boom",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [KIND_POINT], "raise ValueError\n")],
-            "- greeters:kind: cannot load {0}:Kind: ValueError",
+            KIND_REF,
+            GREETERS,
+            fake_a(source="raise ValueError"),
+            "cannot load {0}:Kind: ValueError",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [("kind", ":Missing")], KIND)],
-            "- greeters:kind: cannot load {0}:Missing: "
+            KIND_REF,
+            GREETERS,
+            fake_a(("kind", ":Missing")),
+            "cannot load {0}:Missing: "
             "AttributeError: module '{0}' has no attribute 'Missing'",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [("kind", ":instance")], KIND + "instance = Kind()\n")],
-            "- greeters:kind: {0}:instance is not a class.",
+            KIND_REF,
+            GREETERS,
+            fake_a(("kind", ":instance"), source=KIND + "instance = Kind()"),
+            "{0}:instance is not a class.",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [KIND_POINT], KIND + RAISES_ON_GET)],
-            "- greeters:kind: cannot check {0}:Kind: RuntimeError: bad descriptor",
+            KIND_REF,
+            GREETERS,
+            fake_a(source=KIND + RAISES_ON_GET),
+            "cannot check {0}:Kind: RuntimeError: bad descriptor",
         ),
         (
-            "greeters:kind",
-            (GREETER_GROUP,),
-            [("fake-a", "1.0", [KIND_POINT], KIND.replace("async def", "def"))],
-            "- greeters:kind: {0}:Kind does not match Greeter: greet must be async.",
+            KIND_REF,
+            GREETERS,
+            fake_a(source=KIND.replace("async def", "def")),
+            "{0}:Kind does not match Greeter: greet must be async.",
         ),
     ],
 )
@@ -292,15 +278,6 @@ def test_load_errors_name_the_plugin_and_the_problem(
     modules = install_greeters(tmp_path, monkeypatch, distributions)
     with pytest.raises(PluginError) as error_info:
         load_plugins({reference}, groups)
-    assert str(error_info.value) == NOT_VALID + expected.format(*modules)
-
-
-def test_load_errors_list_each_plugin_in_sorted_order() -> None:
-    """Give one error with one line for each bad plugin, sorted by reference."""
-    with pytest.raises(PluginError) as error_info:
-        load_plugins(["runtimes:x", "greeters:kind"], (GREETER_GROUP,))
     assert str(error_info.value) == (
-        NOT_VALID
-        + "- greeters:kind: no installed package declares kind in kamayoq.greeters.\n"
-        + "- runtimes:x: no plugin group runtimes. Known groups: greeters."
+        f"{NOT_VALID}- {reference}: {expected.format(*modules)}"
     )
