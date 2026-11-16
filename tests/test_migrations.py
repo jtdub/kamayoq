@@ -18,12 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import kamayoq.api.health
 from kamayoq.api.app import create_app
+from kamayoq.db.base import ORG_ID_EXEMPT_TABLES
 from kamayoq.db.engine import get_session, to_sqlalchemy_url
 from kamayoq.db.models import DEFAULT_ORG_ID, DEFAULT_ORG_NAME, Base, Organization
 from kamayoq.settings import Settings
 
 ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
-LIVE_CHECK_EXEMPT = {"alembic_version", "organizations"}
+LIVE_CHECK_EXEMPT = ORG_ID_EXEMPT_TABLES | {"alembic_version"}
 
 
 @pytest.fixture
@@ -65,9 +66,7 @@ def test_each_public_table_has_org_id_after_upgrade(migrated: Engine) -> None:
     assert errors == ["stray: has no org_id column."]
 
 
-def test_app_loggers_work_after_migration(
-    alembic_config: Config, sync_engine: Engine
-) -> None:
+def test_app_loggers_work_after_migration(alembic_config: Config) -> None:
     """Keep the app loggers on and the root handlers as they were."""
     root_handlers = list(logging.getLogger().handlers)
     command.upgrade(alembic_config, "head")
@@ -107,6 +106,9 @@ def test_downgrade_base_then_upgrade_again(
         assert tables == ["alembic_version"]
         assert versions.scalar_one() == 0
     command.upgrade(alembic_config, "head")
+    with migrated.connect() as connection:
+        names = connection.execute(text("SELECT name FROM organizations")).scalars()
+        assert list(names) == [DEFAULT_ORG_NAME]
 
 
 def test_session_dependency_reads_default_org(

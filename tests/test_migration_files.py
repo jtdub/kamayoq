@@ -1,7 +1,6 @@
 """Unit tests of the Alembic config, the revision files, and the env.py errors."""
 
 import configparser
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -52,7 +51,6 @@ def test_alembic_cli_prints_failed_line() -> None:
         text=True,
         check=False,
         cwd=PROJECT_ROOT,
-        env=dict(os.environ),
     )
     assert "FAILED: Settings are not valid" in result.stdout
     assert "Traceback" not in result.stdout + result.stderr
