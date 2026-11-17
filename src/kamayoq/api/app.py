@@ -10,16 +10,16 @@ from fastapi import FastAPI
 from kamayoq import plugins
 from kamayoq.api.health import ReadinessCheck, build_router
 from kamayoq.db.engine import create_db_engine, create_sessionmaker, sqlalchemy_url
-from kamayoq.secrets import remember
+from kamayoq.secrets import build_secret_store, remember
 from kamayoq.settings import Settings
 
 
 def create_app(settings: Settings) -> FastAPI:
     """Return the API app for these settings.
 
-    The app holds the plugin registry, one database engine, and one session maker
-    in app.state. It disposes of the engine when it stops. Log lines hide the
-    database password.
+    The app holds the plugin registry, one database engine, one session maker, and
+    the secret store in app.state. It disposes of the engine when it stops. Log
+    lines hide the database password.
 
     Raises:
         PluginError: If a plugin on the allowlist cannot load.
@@ -48,6 +48,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.plugins = registry
     app.state.engine = engine
     app.state.sessionmaker = create_sessionmaker(engine)
+    app.state.secrets = build_secret_store(settings)
     check = ReadinessCheck(str(settings.database_url), settings.readiness_timeout)
     app.include_router(build_router(check))
     return app

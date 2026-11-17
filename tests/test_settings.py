@@ -8,6 +8,7 @@ import pytest
 from kamayoq.settings import ENV_PREFIX, InvalidSettingsError, Settings, load_settings
 
 DATABASE_URL = "postgresql://kamayoq:secret@db.example:5432/kamayoq"
+DEFAULT_SECRETS_DIR = Path("/run/secrets")
 TOML_SETTINGS = """\
 host = "0.0.0.0"
 port = 8001
@@ -48,6 +49,8 @@ def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None
     assert settings.log_level == "INFO"
     assert settings.api_docs is False
     assert settings.plugins == frozenset()
+    assert settings.secrets_backend == "env"
+    assert settings.secrets_dir == DEFAULT_SECRETS_DIR
 
 
 def test_missing_database_url_names_field_and_env_name() -> None:
@@ -287,3 +290,70 @@ def test_unknown_kamayoq_env_var_is_ignored(
     monkeypatch.setenv("KAMAYOQ_REQUIRE_DOCKER", "1")
     monkeypatch.setenv("KAMAYOQ_NOT_A_SETTING", "x")
     assert load_settings().port == 8000
+
+
+SECRETS_DIR_ERROR = (
+    "- secrets_dir (KAMAYOQ_SECRETS_DIR): "
+    "Value error, must be a directory when secrets_backend is file"
+)
+
+
+def test_unknown_secrets_backend_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Name the setting and the values that it accepts."""
+    monkeypatch.setenv("KAMAYOQ_SECRETS_BACKEND", "vault")
+    assert load_error() == (
+        "Settings are not valid:\n"
+        "- secrets_backend (KAMAYOQ_SECRETS_BACKEND): Input should be 'env' or 'file'"
+    )
+
+
+@pytest.mark.skipif(
+    DEFAULT_SECRETS_DIR.is_dir(), reason="/run/secrets exists on this machine"
+)
+def test_file_backend_with_a_missing_default_directory_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Check the default directory when the file backend is on."""
+    monkeypatch.setenv("KAMAYOQ_SECRETS_BACKEND", "file")
+    assert load_error() == f"Settings are not valid:\n{SECRETS_DIR_ERROR}"
+
+
+def test_file_backend_with_a_missing_directory_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Reject a KAMAYOQ_SECRETS_DIR that is not a directory, and show no path."""
+    missing = tmp_path / "does-not-exist"
+    monkeypatch.setenv("KAMAYOQ_SECRETS_BACKEND", "file")
+    monkeypatch.setenv("KAMAYOQ_SECRETS_DIR", str(missing))
+    message = load_error()
+    assert message == f"Settings are not valid:\n{SECRETS_DIR_ERROR}"
+    assert str(missing) not in message
+
+
+def test_file_backend_with_a_directory_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Load the file backend and the directory."""
+    monkeypatch.setenv("KAMAYOQ_SECRETS_BACKEND", "file")
+    monkeypatch.setenv("KAMAYOQ_SECRETS_DIR", str(tmp_path))
+    settings = load_settings()
+    assert settings.secrets_backend == "file"
+    assert settings.secrets_dir == tmp_path
+
+
+def test_env_backend_does_not_check_the_directory(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Accept a missing directory when the env backend is on."""
+    monkeypatch.setenv("KAMAYOQ_SECRETS_DIR", str(tmp_path / "does-not-exist"))
+    assert load_settings().secrets_backend == "env"
+
+
+def test_secret_variables_are_not_settings(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Load the settings when KAMAYOQ_SECRET_ variables are set."""
+    monkeypatch.setenv("KAMAYOQ_SECRET_SLACK_TOKEN", "v-123456")
+    assert load_settings().secrets_backend == "env"
