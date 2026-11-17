@@ -1,13 +1,15 @@
 """Settings of kamayoq, read from KAMAYOQ_ environment variables."""
 
 import os
+import re
 import tomllib
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, PostgresDsn, ValidationError, field_validator
 from pydantic_settings import (
     BaseSettings,
+    NoDecode,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     SettingsError,
@@ -17,6 +19,7 @@ from pydantic_settings import (
 ENV_PREFIX = "KAMAYOQ_"
 CONFIG_FILE_ENV = "KAMAYOQ_CONFIG_FILE"
 LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
+PLUGIN_REFERENCE = re.compile(r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._-]*")
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
@@ -65,6 +68,7 @@ class Settings(BaseSettings):
     readiness_timeout: float = Field(default=2.0, gt=0)
     log_level: LogLevel = "INFO"
     api_docs: bool = False
+    plugins: Annotated[frozenset[str], NoDecode] = frozenset()
 
     @classmethod
     def settings_customise_sources(
@@ -87,6 +91,26 @@ class Settings(BaseSettings):
     def upper_case_log_level(cls, value: object) -> object:
         """Accept a log level in any case."""
         return value.upper() if isinstance(value, str) else value
+
+    @field_validator("plugins", mode="before")
+    @classmethod
+    def split_plugin_list(cls, value: object) -> object:
+        """Split a comma list into stripped entries. Keep a list as it is."""
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",")]
+        return value
+
+    @field_validator("plugins", mode="after")
+    @classmethod
+    def check_plugin_references(cls, value: frozenset[str]) -> frozenset[str]:
+        """Reject each entry that is not group:name."""
+        bad = sorted(item for item in value if not PLUGIN_REFERENCE.fullmatch(item))
+        if bad:
+            raise ValueError(
+                "each entry must be group:name, for example runtimes:langgraph. "
+                f"Not valid: {', '.join(repr(item) for item in bad)}"
+            )
+        return value
 
     @field_validator("database_url", mode="after")
     @classmethod
