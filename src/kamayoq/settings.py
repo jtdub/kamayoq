@@ -104,6 +104,8 @@ class Settings(BaseSettings):
     oidc_issuer: str | None = None
     oidc_audience: str | None = Field(default=None, min_length=1, validate_default=True)
     oidc_groups_claim: str = Field(default="groups", min_length=1)
+    secrets_backend: Literal["env", "file"] = "env"
+    secrets_dir: Path = Field(default=Path("/run/secrets"), validate_default=True)
 
     @classmethod
     def settings_customise_sources(
@@ -170,6 +172,22 @@ class Settings(BaseSettings):
                 f"set both {ENV_PREFIX}OIDC_ISSUER and {ENV_PREFIX}OIDC_AUDIENCE, "
                 "or neither"
             )
+        return value
+
+    @field_validator("secrets_dir", mode="before")
+    @classmethod
+    def reject_empty_secrets_dir(cls, value: object) -> object:
+        """Reject an empty path. It does not become the current directory."""
+        if value == "":
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("secrets_dir", mode="after")
+    @classmethod
+    def require_secrets_dir(cls, value: Path, info: ValidationInfo) -> Path:
+        """Require a directory for the file backend. The message has no path."""
+        if info.data.get("secrets_backend") == "file" and not value.is_dir():
+            raise ValueError("must be a directory when secrets_backend is file")
         return value
 
     @field_validator("database_url", mode="after")

@@ -192,6 +192,8 @@ WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has
 | `KAMAYOQ_OIDC_ISSUER` | `oidc_issuer` | Not set | The issuer URL of the OIDC provider. It must use `https`, or `http` on `localhost`, `127.0.0.1`, or `[::1]`. Set it together with `KAMAYOQ_OIDC_AUDIENCE`. Checked at start. Not used for login until a later release. |
 | `KAMAYOQ_OIDC_AUDIENCE` | `oidc_audience` | Not set | The audience that an access token must have. Set it together with `KAMAYOQ_OIDC_ISSUER`. Checked at start. Not used for login until a later release. |
 | `KAMAYOQ_OIDC_GROUPS_CLAIM` | `oidc_groups_claim` | `groups` | The token claim that holds the groups of the user. Checked at start. Not used for login until a later release. |
+| `KAMAYOQ_SECRETS_BACKEND` | `secrets_backend` | `env` | Where kamayoq reads secrets: `env` or `file`. See [Secrets](#secrets). |
+| `KAMAYOQ_SECRETS_DIR` | `secrets_dir` | `/run/secrets` | The directory of the secret files. It must exist when `KAMAYOQ_SECRETS_BACKEND` is `file`. |
 | `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
 
 Put `KAMAYOQ_DATABASE_URL` in the environment, not in the TOML file, because the URL can contain a password.
@@ -254,7 +256,27 @@ kamayoq does not check annotations at start, so run mypy against the Protocol.
 
 ### Secrets
 
+A component asks for a secret with a secret reference, for example `secret://slack_token`.
+The name after `secret://` has lower-case letters, digits, and `_`. It starts with a letter and has 1 to 128 characters.
+
+`KAMAYOQ_SECRETS_BACKEND` selects where kamayoq reads the value:
+
+- `env`, the default: kamayoq reads `secret://slack_token` from the variable `KAMAYOQ_SECRET_SLACK_TOKEN`. The variable name is the secret name in upper case.
+- `file`: kamayoq reads `secret://slack_token` from the file `/run/secrets/slack_token`, as Docker mounts a secret. `KAMAYOQ_SECRETS_DIR` changes the directory.
+
+For example, set the Slack token in the environment of `kamayoq serve`:
+
+```bash
+KAMAYOQ_SECRET_SLACK_TOKEN=CHANGE_ME uv run kamayoq serve
+```
+
+The file backend removes one line end from the end of the file, and keeps all other content.
+A secret file must be a regular file of at most 64 KiB in UTF-8, inside the secrets directory.
+An empty variable or an empty file is the same as a missing secret.
+kamayoq reads the value at each use, so a changed value takes effect with no restart.
+
 Log lines show `**********` in place of each secret value that kamayoq knows.
+kamayoq knows each value that it reads. With the `env` backend, it also knows each `KAMAYOQ_SECRET_` value at start.
 At start, kamayoq knows the password in `KAMAYOQ_DATABASE_URL`, in the URL form and in the decoded form.
 Code in kamayoq can call `kamayoq.secrets.redact(text)` to hide the known values in other text.
 
@@ -264,6 +286,7 @@ These limits apply:
 - A value of fewer than 4 characters, or of white space only, is not hidden. kamayoq writes one warning for each secret. The warning names the secret and does not show the value.
 - A password from `PGPASSWORD` or `~/.pgpass` is not hidden.
 - Output that does not go through the kamayoq log handler is not hidden: a logger with `propagate=False`, a crash traceback, `print`, `warnings`, and output before the log setup.
+- Each process that can read the environment of kamayoq can read an `env` secret. Use the `file` backend to keep secrets out of the environment.
 
 ### Endpoints
 

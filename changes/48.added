@@ -1,0 +1,3 @@
+Added the `KAMAYOQ_SECRETS_BACKEND` setting. Set `env` to read `secret://<name>` from `KAMAYOQ_SECRET_<NAME>`, or `file` to read a Docker secret file.
+Added the `KAMAYOQ_SECRETS_DIR` setting for the file backend. The default is `/run/secrets`.
+Log lines also show `**********` in place of each secret value that kamayoq reads.
