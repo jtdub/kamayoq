@@ -2,7 +2,6 @@
 
 import importlib
 import logging
-import re
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -19,7 +18,7 @@ from kamayoq.plugins import (
     load_plugins,
     protocol_mismatches,
 )
-from kamayoq.settings import Settings
+from kamayoq.settings import PLUGIN_REFERENCE, Settings
 
 KIND = """\
 class Kind:
@@ -104,7 +103,7 @@ def test_plugin_groups_have_unique_valid_names_and_protocols() -> None:
     names = [group.name for group in PLUGIN_GROUPS]
     assert len(names) == len(set(names))
     for group in PLUGIN_GROUPS:
-        assert re.fullmatch(r"[a-z][a-z0-9_]*", group.name)
+        assert PLUGIN_REFERENCE.fullmatch(f"{group.name}:x")
         assert is_protocol(group.protocol)
 
 

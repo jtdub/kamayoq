@@ -128,7 +128,7 @@ def test_serve_with_bad_plugin_exits_four_before_uvicorn(
     monkeypatch.setattr("kamayoq.plugins.PLUGIN_GROUPS", (GREETER_GROUP,))
     monkeypatch.setattr("kamayoq.cli.configure_logging", lambda level: None)
     monkeypatch.setattr("kamayoq.cli.uvicorn.run", fail_run)
-    install_fake_distribution(
+    module = install_fake_distribution(
         tmp_path,
         monkeypatch,
         "fake-greeter",
@@ -137,9 +137,10 @@ def test_serve_with_bad_plugin_exits_four_before_uvicorn(
         SYNC_GREETER,
     )
     assert main(["serve"]) == 4
-    err = capsys.readouterr().err
-    assert err.startswith("kamayoq: Plugins are not valid:\n- greeters:kind: ")
-    assert "greet must be async" in err
+    assert capsys.readouterr().err == (
+        "kamayoq: Plugins are not valid:\n"
+        f"- greeters:kind: {module}:Kind does not match Greeter: greet must be async.\n"
+    )
 
 
 def test_serve_runs_uvicorn_with_settings_and_no_log_config(
