@@ -4,7 +4,9 @@ import logging
 
 import pytest
 
+from kamayoq.api.app import create_app
 from kamayoq.secrets import MASK, redact, remember
+from kamayoq.settings import Settings
 
 FIXTURE_PROBE_VALUE = "value-of-the-earlier-test"
 
@@ -86,3 +88,33 @@ def test_fixture_probe_remembers_a_value() -> None:
 def test_fixture_forgets_the_value_of_the_earlier_test() -> None:
     """Start each test with no known values."""
     assert redact(FIXTURE_PROBE_VALUE) == FIXTURE_PROBE_VALUE
+
+
+def test_create_app_hides_the_encoded_and_decoded_database_password() -> None:
+    """Make both forms of the database password known values."""
+    create_app(Settings(database_url="postgresql://k:p%40ss%2Fw@h:5/d"))
+    assert redact("encoded p%40ss%2Fw") == f"encoded {MASK}"
+    assert redact("decoded p@ss/w") == f"decoded {MASK}"
+
+
+def test_create_app_with_no_database_password_adds_no_known_value(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Add nothing and warn about nothing when the URL has no password."""
+    caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
+    url = "postgresql://k@h:5/d"
+    create_app(Settings(database_url=url))
+    assert redact(url) == url
+    assert caplog.records == []
+
+
+def test_create_app_warns_once_for_a_short_database_password(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Write one warning that names the database password and shows no value."""
+    caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
+    create_app(Settings(database_url="postgresql://k:pw@h:5/d"))
+    assert [r.getMessage() for r in caplog.records] == [
+        "the database password is shorter than 4 characters or is only white space, "
+        "so log lines do not hide it"
+    ]
