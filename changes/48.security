@@ -1,0 +1,1 @@
+Added log redaction. Each log line shows `**********` in place of the password in `KAMAYOQ_DATABASE_URL`.
