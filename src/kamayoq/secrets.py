@@ -1,5 +1,6 @@
 """Read secrets by name, and keep their values out of log lines."""
 
+import errno
 import logging
 import os
 import re
@@ -205,18 +206,26 @@ class FileSecretStore:
         """Return the file content with one line end removed, as a known value.
 
         The file must be a regular file of at most 64 KiB in UTF-8, inside the
-        directory.
+        directory. Python 3.12 raises RuntimeError for a link loop, so it becomes
+        the same error as an OSError.
         """
         check_name(name)
         reference = SECRET_SCHEME + name
-        directory = self.directory.resolve()
-        path = (directory / name).resolve()
-        if not path.is_relative_to(directory):
-            raise SecretNotFoundError(f"{reference}: {path} is outside {directory}")
-        if not path.exists():
-            raise SecretNotFoundError(f"{reference} is not set. Add the file {path}")
+        path = self.directory / name
         try:
+            directory = self.directory.resolve()
+            path = (directory / name).resolve()
+            if not path.is_relative_to(directory):
+                raise SecretNotFoundError(f"{reference}: {path} is outside {directory}")
+            if not path.exists():
+                raise SecretNotFoundError(
+                    f"{reference} is not set. Add the file {path}"
+                )
             text = _read_secret_file(path, reference).decode("utf-8")
+        except RuntimeError:
+            raise SecretNotFoundError(
+                f"{reference}: cannot read {path}: {os.strerror(errno.ELOOP)}"
+            ) from None
         except UnicodeDecodeError:
             raise SecretNotFoundError(
                 f"{reference}: {path} is not UTF-8 text"

@@ -370,8 +370,38 @@ def test_file_store_reports_an_os_error_with_no_content(
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr("kamayoq.secrets.os.open", refuse)
-    assert file_error(tmp_path) == (
+    with pytest.raises(SecretNotFoundError) as error_info:
+        asyncio.run(FileSecretStore(tmp_path).get("slack_token"))
+    assert str(error_info.value) == (
         f"secret://slack_token: cannot read {path}: Permission denied"
+    )
+    assert error_info.value.__suppress_context__ is True
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_file_store_reports_a_directory_with_no_search_permission(
+    tmp_path: Path,
+) -> None:
+    """Give the cannot read message when the store cannot look in the directory."""
+    directory = tmp_path.resolve() / "locked"
+    directory.mkdir()
+    directory.chmod(0o600)
+    try:
+        message = file_error(directory)
+    finally:
+        directory.chmod(0o700)
+    assert message == (
+        f"secret://slack_token: cannot read {directory / 'slack_token'}: "
+        "Permission denied"
+    )
+
+
+def test_file_store_reports_a_link_loop(tmp_path: Path) -> None:
+    """Give the cannot read message for a link to itself."""
+    path = tmp_path.resolve() / "slack_token"
+    path.symlink_to(path)
+    assert file_error(tmp_path) == (
+        f"secret://slack_token: cannot read {path}: Too many levels of symbolic links"
     )
 
 
@@ -421,10 +451,11 @@ def test_env_backend_makes_each_secret_variable_a_known_value_at_start(
     monkeypatch.setenv("KAMAYOQ_SECRET_EMPTY", "")
     monkeypatch.setenv("KAMAYOQ_SECRET_PIN", "123")
     monkeypatch.setenv("OTHER_TOKEN", "not-a-secret")
+    monkeypatch.setenv("KAMAYOQ_NOT_A_SECRET", "kamayoq-setting")
     store = build_secret_store(Settings(database_url=DATABASE_URL))
     assert isinstance(store, EnvSecretStore)
-    assert redact("xoxb-1234 mcp-key-5678 not-a-secret 123") == (
-        f"{MASK} {MASK} not-a-secret 123"
+    assert redact("xoxb-1234 mcp-key-5678 not-a-secret kamayoq-setting 123") == (
+        f"{MASK} {MASK} not-a-secret kamayoq-setting 123"
     )
     assert [r.getMessage() for r in caplog.records] == [
         "KAMAYOQ_SECRET_PIN is shorter than 4 characters or is only white space, "
