@@ -2,19 +2,24 @@
 
 import importlib
 import logging
+import re
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
 from fake_plugins import GREETER_GROUP, Greeter, install_fake_distribution
+from typing_extensions import is_protocol
 
+from kamayoq.api.app import create_app
 from kamayoq.plugins import (
+    PLUGIN_GROUPS,
     PluginError,
     PluginGroup,
     load_plugins,
     protocol_mismatches,
 )
+from kamayoq.settings import Settings
 
 KIND = """\
 class Kind:
@@ -92,6 +97,15 @@ def define_kind(source: str) -> type:
 def test_entry_point_group_has_kamayoq_prefix() -> None:
     """Put kamayoq. before the group name."""
     assert PluginGroup("greeters", Greeter).entry_point_group == "kamayoq.greeters"
+
+
+def test_plugin_groups_have_unique_valid_names_and_protocols() -> None:
+    """Give each group a unique lower-case name and a Protocol."""
+    names = [group.name for group in PLUGIN_GROUPS]
+    assert len(names) == len(set(names))
+    for group in PLUGIN_GROUPS:
+        assert re.fullmatch(r"[a-z][a-z0-9_]*", group.name)
+        assert is_protocol(group.protocol)
 
 
 @pytest.mark.parametrize(
@@ -281,3 +295,31 @@ def test_load_errors_name_the_plugin_and_the_problem(
     assert str(error_info.value) == (
         f"{NOT_VALID}- {reference}: {expected.format(*modules)}"
     )
+
+
+def test_load_errors_list_each_plugin_in_sorted_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Give one error with one line for each bad plugin, sorted by reference."""
+    [module] = install_greeters(
+        tmp_path, monkeypatch, fake_a(source="raise ValueError")
+    )
+    with pytest.raises(PluginError) as error_info:
+        load_plugins({KIND_REF, "greeters:absent"}, GREETERS)
+    assert str(error_info.value) == (
+        f"{NOT_VALID}- greeters:absent: no installed package declares absent in "
+        f"kamayoq.greeters.\n- {KIND_REF}: cannot load {module}:Kind: ValueError"
+    )
+
+
+def test_create_app_puts_registry_in_app_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Load the allowed plugins when the app is created, and keep them in app.state."""
+    monkeypatch.setattr("kamayoq.plugins.PLUGIN_GROUPS", GREETERS)
+    [module] = install_greeters(tmp_path, monkeypatch, fake_a())
+    url = "postgresql://u:p@h:5/d"
+    app = create_app(Settings(database_url=url, plugins=frozenset({KIND_REF})))
+    kind = importlib.import_module(module).Kind
+    assert app.state.plugins == {("greeters", "kind"): kind}
+    assert create_app(Settings(database_url=url)).state.plugins == {}
