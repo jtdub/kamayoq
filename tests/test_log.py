@@ -10,6 +10,9 @@ from typing import Any
 import pytest
 
 from kamayoq.log import JsonFormatter, configure_logging
+from kamayoq.secrets import MASK, remember
+
+SECRET_VALUE = "s3cr3t-Value-42"
 
 
 @pytest.fixture
@@ -23,6 +26,33 @@ def restored_root_logger() -> Iterator[None]:
             handler.close()
     logging.root.handlers[:] = saved_handlers
     logging.root.setLevel(saved_level)
+
+
+class RecordCollector(logging.Handler):
+    """Keep each record that reaches the handler, with no filter."""
+
+    def __init__(self) -> None:
+        """Start with no records."""
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Keep the record."""
+        self.records.append(record)
+
+
+def start_logging() -> RecordCollector:
+    """Configure kamayoq logging, add an unfiltered root handler, and know a value."""
+    configure_logging("INFO")
+    collector = RecordCollector()
+    logging.root.addHandler(collector)
+    remember(SECRET_VALUE, "secret://test")
+    return collector
+
+
+def stderr_records(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
+    """Return each JSON line of stderr as a dict."""
+    return [json.loads(line) for line in capsys.readouterr().err.splitlines()]
 
 
 def make_record(**fields: Any) -> logging.LogRecord:
@@ -84,3 +114,109 @@ def test_configure_logging_sends_uvicorn_named_loggers_to_json(
         ("uvicorn.error", "INFO", "Started server process [42]"),
         ("uvicorn.access", "INFO", '127.0.0.1:53889 - "GET /healthz HTTP/1.1" 200'),
     ]
+
+
+@pytest.mark.usefixtures("restored_root_logger")
+@pytest.mark.parametrize("logger_name", ["kamayoq.test", "uvicorn.error", "httpx"])
+def test_known_value_is_masked_in_message_args_and_exception(
+    logger_name: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mask the value in each line of the kamayoq handler, for each logger."""
+    collector = start_logging()
+    logger = logging.getLogger(logger_name)
+    logger.info(f"token {SECRET_VALUE} in the message")
+    logger.info("token %s in the args", SECRET_VALUE)
+    try:
+        raise RuntimeError(f"refused {SECRET_VALUE}")
+    except RuntimeError:
+        logger.exception("call failed")
+    err = capsys.readouterr().err
+    assert SECRET_VALUE not in err
+    records = [json.loads(line) for line in err.splitlines()]
+    assert [r["message"] for r in records] == [
+        f"token {MASK} in the message",
+        f"token {MASK} in the args",
+        "call failed",
+    ]
+    assert f"RuntimeError: refused {MASK}" in records[2]["exc_info"]
+    raw = collector.records
+    assert SECRET_VALUE in raw[0].getMessage()
+    assert SECRET_VALUE in raw[1].getMessage()
+    assert raw[2].exc_info is not None
+    assert SECRET_VALUE in str(raw[2].exc_info[1])
+
+
+@pytest.mark.usefixtures("restored_root_logger")
+def test_known_value_is_masked_in_stack_info(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mask the value in the stack text of a record."""
+    collector = start_logging()
+    record = logging.makeLogRecord(
+        {
+            "name": "kamayoq.test",
+            "levelno": logging.INFO,
+            "levelname": "INFO",
+            "msg": "x",
+            "stack_info": f"Stack {SECRET_VALUE}",
+        }
+    )
+    logging.getLogger().handle(record)
+    [line] = stderr_records(capsys)
+    assert line["stack_info"] == f"Stack {MASK}"
+    assert collector.records[0].stack_info == f"Stack {SECRET_VALUE}"
+
+
+@pytest.mark.usefixtures("restored_root_logger")
+def test_cached_exception_text_is_masked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mask the value in exc_text that another formatter cached."""
+    collector = start_logging()
+    record = logging.makeLogRecord(
+        {
+            "name": "kamayoq.test",
+            "levelno": logging.ERROR,
+            "levelname": "ERROR",
+            "msg": "x",
+            "exc_info": None,
+            "exc_text": f"Traceback\nRuntimeError: {SECRET_VALUE}",
+        }
+    )
+    logging.getLogger().handle(record)
+    [line] = stderr_records(capsys)
+    assert line["exc_info"] == f"Traceback\nRuntimeError: {MASK}"
+    assert collector.records[0].exc_text == f"Traceback\nRuntimeError: {SECRET_VALUE}"
+
+
+@pytest.mark.usefixtures("restored_root_logger")
+def test_bad_args_do_not_raise_and_the_line_has_no_known_value(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Write the redacted message text when the args do not match it."""
+    start_logging()
+    logging.getLogger("kamayoq.test").info(f"{SECRET_VALUE} count %d", "x")
+    err = capsys.readouterr().err
+    assert SECRET_VALUE not in err
+    assert "Logging error" not in err
+    [line] = [json.loads(text) for text in err.splitlines()]
+    assert line["message"] == f"{MASK} count %d"
+
+
+@pytest.mark.usefixtures("restored_root_logger")
+def test_filter_does_not_change_the_record_of_other_handlers(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Give the next handler the original message, args, and exception."""
+    collector = start_logging()
+    try:
+        raise RuntimeError(SECRET_VALUE)
+    except RuntimeError:
+        logging.getLogger("kamayoq.test").exception("value %s", SECRET_VALUE)
+    assert MASK in capsys.readouterr().err
+    [record] = collector.records
+    assert record.msg == "value %s"
+    assert record.args == (SECRET_VALUE,)
+    assert record.exc_info is not None
+    assert record.exc_text is None
