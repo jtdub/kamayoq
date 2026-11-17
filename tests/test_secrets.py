@@ -5,7 +5,7 @@ import logging
 import pytest
 
 from kamayoq.api.app import create_app
-from kamayoq.secrets import MASK, redact, remember
+from kamayoq.secrets import MASK, forget_all, redact, remember
 from kamayoq.settings import Settings
 
 FIXTURE_PROBE_VALUE = "value-of-the-earlier-test"
@@ -74,6 +74,23 @@ def test_remember_does_not_hide_a_short_or_blank_value_and_warns(
         "secret://tiny is shorter than 4 characters or is only white space, "
         "so log lines do not hide it"
     )
+
+
+def test_remember_warns_once_for_each_source_until_forget_all(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Warn once for each source, and warn again after forget_all."""
+    caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
+    remember("abc", "secret://tiny")
+    remember("abc", "secret://tiny")
+    remember("abc", "secret://other")
+    forget_all()
+    remember("abc", "secret://tiny")
+    assert [r.getMessage().split(" ")[0] for r in caplog.records] == [
+        "secret://tiny",
+        "secret://other",
+        "secret://tiny",
+    ]
 
 
 def test_remember_hides_a_value_of_four_characters(

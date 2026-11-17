@@ -258,7 +258,7 @@ Code in kamayoq can call `kamayoq.secrets.redact(text)` to hide the known values
 These limits apply:
 
 - kamayoq cannot hide a value that it did not read, or a changed form of a value, for example base64.
-- A value of fewer than 4 characters, or of white space only, is not hidden. kamayoq writes one warning that names the secret and does not show the value.
+- A value of fewer than 4 characters, or of white space only, is not hidden. kamayoq writes one warning for each secret. The warning names the secret and does not show the value.
 - A password from `PGPASSWORD` or `~/.pgpass` is not hidden.
 - Output that does not go through the kamayoq log handler is not hidden: a logger with `propagate=False`, a crash traceback, `print`, `warnings`, and output before the log setup.
 

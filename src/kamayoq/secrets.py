@@ -8,6 +8,7 @@ MIN_REDACTED_LENGTH = 4
 
 _logger = logging.getLogger(__name__)
 _known_values: set[str] = set()
+_warned_sources: set[str] = set()
 _known_values_lock = threading.Lock()
 
 
@@ -15,7 +16,8 @@ def remember(value: str, source: str) -> None:
     """Make the value a known value, so that redact hides it.
 
     A value shorter than MIN_REDACTED_LENGTH, or of white space only, is not added.
-    kamayoq writes one WARNING line that names the source and shows no value.
+    kamayoq writes one WARNING line for each source. The line names the source and
+    shows no value. forget_all starts the warnings again.
 
     Args:
         value: The secret value.
@@ -23,6 +25,11 @@ def remember(value: str, source: str) -> None:
             ``secret://slack_token``.
     """
     if len(value) < MIN_REDACTED_LENGTH or value.isspace():
+        with _known_values_lock:
+            already_warned = source in _warned_sources
+            _warned_sources.add(source)
+        if already_warned:
+            return
         _logger.warning(
             "%s is shorter than %d characters or is only white space, "
             "so log lines do not hide it",
@@ -35,9 +42,10 @@ def remember(value: str, source: str) -> None:
 
 
 def forget_all() -> None:
-    """Remove all known values."""
+    """Remove all known values, and forget which sources got a warning."""
     with _known_values_lock:
         _known_values.clear()
+        _warned_sources.clear()
 
 
 def _match_spans(text: str, value: str) -> list[tuple[int, int]]:
