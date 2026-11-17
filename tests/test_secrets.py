@@ -19,6 +19,7 @@ from kamayoq.secrets import (
     SecretNotFoundError,
     SecretStore,
     build_secret_store,
+    forget_all,
     parse_reference,
     redact,
     remember,
@@ -92,6 +93,23 @@ def test_remember_does_not_hide_a_short_or_blank_value_and_warns(
         "secret://tiny is shorter than 4 characters or is only white space, "
         "so log lines do not hide it"
     )
+
+
+def test_remember_warns_once_for_each_source_until_forget_all(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Warn once for each source, and warn again after forget_all."""
+    caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
+    remember("abc", "secret://tiny")
+    remember("abc", "secret://tiny")
+    remember("abc", "secret://other")
+    forget_all()
+    remember("abc", "secret://tiny")
+    assert [r.getMessage().split(" ")[0] for r in caplog.records] == [
+        "secret://tiny",
+        "secret://other",
+        "secret://tiny",
+    ]
 
 
 def test_remember_hides_a_value_of_four_characters(
@@ -422,9 +440,10 @@ def test_each_store_makes_its_value_a_known_value(tmp_path: Path) -> None:
 def test_store_warns_for_a_short_value_and_names_the_reference(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Return a short value, and write a warning that shows no value."""
+    """Return a short value at each get, and write one warning with no value."""
     caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
     store = EnvSecretStore({"KAMAYOQ_SECRET_PIN": "123"})
+    assert get_value(store, "pin") == "123"
     assert get_value(store, "pin") == "123"
     assert [r.getMessage() for r in caplog.records] == [
         "secret://pin is shorter than 4 characters or is only white space, "
@@ -489,3 +508,18 @@ def test_create_app_holds_a_file_store_for_the_file_backend(tmp_path: Path) -> N
     app = create_app(settings)
     assert isinstance(app.state.secrets, FileSecretStore)
     assert app.state.secrets.directory == tmp_path
+
+
+def test_env_backend_warns_once_at_start_and_once_for_the_reference(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Name the variable at start and the reference at the first get only."""
+    caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
+    monkeypatch.setenv("KAMAYOQ_SECRET_PIN", "123")
+    store = build_secret_store(Settings(database_url=DATABASE_URL))
+    get_value(store, "pin")
+    get_value(store, "pin")
+    assert [r.getMessage().split(" ")[0] for r in caplog.records] == [
+        "KAMAYOQ_SECRET_PIN",
+        "secret://pin",
+    ]
