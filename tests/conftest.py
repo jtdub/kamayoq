@@ -19,6 +19,7 @@ from testcontainers.core.config import testcontainers_config
 from testcontainers.core.docker_client import DockerClient
 
 from kamayoq.db.models import Base
+from kamayoq.secrets import forget_all
 from kamayoq.settings import ENV_PREFIX
 
 PGVECTOR_IMAGE = (
@@ -63,6 +64,14 @@ def isolated_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in list(os.environ):
         if name.startswith(ENV_PREFIX) and name != REQUIRE_DOCKER_ENV:
             monkeypatch.delenv(name)
+
+
+@pytest.fixture(autouse=True)
+def forget_secret_values() -> Iterator[None]:
+    """Start and end each test with no known secret values."""
+    forget_all()
+    yield
+    forget_all()
 
 
 def docker_unavailable_reason() -> str | None:

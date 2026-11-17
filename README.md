@@ -249,6 +249,19 @@ kamayoq checks each plugin at start:
 Declare a data member as a class attribute or an annotation, not only in `__init__`.
 kamayoq does not check annotations at start, so run mypy against the Protocol.
 
+### Secrets
+
+Log lines show `**********` in place of each secret value that kamayoq knows.
+At start, kamayoq knows the password in `KAMAYOQ_DATABASE_URL`, in the URL form and in the decoded form.
+Code in kamayoq can call `kamayoq.secrets.redact(text)` to hide the known values in other text.
+
+These limits apply:
+
+- kamayoq cannot hide a value that it did not read, or a changed form of a value, for example base64.
+- A value of fewer than 4 characters, or of white space only, is not hidden. kamayoq writes one warning for each secret. The warning names the secret and does not show the value.
+- A password from `PGPASSWORD` or `~/.pgpass` is not hidden.
+- Output that does not go through the kamayoq log handler is not hidden: a logger with `propagate=False`, a crash traceback, `print`, `warnings`, and output before the log setup.
+
 ### Endpoints
 
 | Path | Status | Meaning |
