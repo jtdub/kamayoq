@@ -393,6 +393,7 @@ def test_file_store_reports_an_os_error_with_no_content(
     assert str(error_info.value) == (
         f"secret://slack_token: cannot read {path}: Permission denied"
     )
+    assert error_info.value.__cause__ is None
     assert error_info.value.__suppress_context__ is True
 
 
@@ -469,6 +470,7 @@ def test_env_backend_makes_each_secret_variable_a_known_value_at_start(
     monkeypatch.setenv("KAMAYOQ_SECRET_MCP_KEY", "mcp-key-5678")
     monkeypatch.setenv("KAMAYOQ_SECRET_EMPTY", "")
     monkeypatch.setenv("KAMAYOQ_SECRET_PIN", "123")
+    monkeypatch.setenv("KAMAYOQ_SECRET_A-B", "xy")
     monkeypatch.setenv("OTHER_TOKEN", "not-a-secret")
     monkeypatch.setenv("KAMAYOQ_NOT_A_SECRET", "kamayoq-setting")
     store = build_secret_store(Settings(database_url=DATABASE_URL))
@@ -476,9 +478,11 @@ def test_env_backend_makes_each_secret_variable_a_known_value_at_start(
     assert redact("xoxb-1234 mcp-key-5678 not-a-secret kamayoq-setting 123") == (
         f"{MASK} {MASK} not-a-secret kamayoq-setting 123"
     )
-    assert [r.getMessage() for r in caplog.records] == [
-        "KAMAYOQ_SECRET_PIN is shorter than 4 characters or is only white space, "
-        "so log lines do not hide it"
+    assert sorted(r.getMessage() for r in caplog.records) == [
+        "KAMAYOQ_SECRET_A-B is shorter than 4 characters or is only white space, "
+        "so log lines do not hide it",
+        "secret://pin is shorter than 4 characters or is only white space, "
+        "so log lines do not hide it",
     ]
 
 
@@ -510,16 +514,13 @@ def test_create_app_holds_a_file_store_for_the_file_backend(tmp_path: Path) -> N
     assert app.state.secrets.directory == tmp_path
 
 
-def test_env_backend_warns_once_at_start_and_once_for_the_reference(
+def test_env_backend_warns_once_for_a_short_secret(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Name the variable at start and the reference at the first get only."""
+    """Write one warning, named by the reference, for the start and each get."""
     caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
     monkeypatch.setenv("KAMAYOQ_SECRET_PIN", "123")
     store = build_secret_store(Settings(database_url=DATABASE_URL))
     get_value(store, "pin")
     get_value(store, "pin")
-    assert [r.getMessage().split(" ")[0] for r in caplog.records] == [
-        "KAMAYOQ_SECRET_PIN",
-        "secret://pin",
-    ]
+    assert [r.getMessage().split(" ")[0] for r in caplog.records] == ["secret://pin"]

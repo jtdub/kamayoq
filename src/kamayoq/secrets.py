@@ -214,8 +214,8 @@ class FileSecretStore:
         """Return the file content with one line end removed, as a known value.
 
         The file must be a regular file of at most 64 KiB in UTF-8, inside the
-        directory. Python 3.12 raises RuntimeError for a link loop, so it becomes
-        the same error as an OSError.
+        directory. A read error, a link loop included, gives the cannot read
+        message.
         """
         check_name(name)
         reference = SECRET_SCHEME + name
@@ -246,6 +246,18 @@ class FileSecretStore:
         return _known_secret(text.removesuffix(line_end), reference)
 
 
+def _start_source(variable: str) -> str:
+    """Return the reference that a KAMAYOQ_SECRET_ variable holds, else the variable.
+
+    The start scan and EnvSecretStore.get then name a short value the same way.
+    """
+    suffix = variable.removeprefix(ENV_SECRET_PREFIX)
+    name = suffix.lower()
+    if SECRET_NAME.fullmatch(name) and name.upper() == suffix:
+        return SECRET_SCHEME + name
+    return variable
+
+
 def build_secret_store(settings: Settings) -> SecretStore:
     """Return the secret store that KAMAYOQ_SECRETS_BACKEND selects.
 
@@ -256,5 +268,5 @@ def build_secret_store(settings: Settings) -> SecretStore:
         return FileSecretStore(settings.secrets_dir)
     for variable, value in os.environ.items():
         if variable.startswith(ENV_SECRET_PREFIX) and value:
-            remember(value, variable)
+            remember(value, _start_source(variable))
     return EnvSecretStore()
