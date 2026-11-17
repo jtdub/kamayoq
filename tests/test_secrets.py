@@ -31,6 +31,13 @@ def test_redact_masks_a_value_that_contains_another_value_as_one_span() -> None:
     assert redact("xabcdefx") == f"x{MASK}x"
 
 
+def test_redact_masks_a_value_inside_another_value_as_one_span() -> None:
+    """Mask the outer value whole when an inner value starts and ends inside it."""
+    remember("abcdef", "secret://outer")
+    remember("bcde", "secret://inner")
+    assert redact("xabcdefx") == f"x{MASK}x"
+
+
 def test_redact_merges_overlapping_values_into_one_mask() -> None:
     """Leave no part of two values that overlap in the text."""
     remember("abcd", "secret://left")
