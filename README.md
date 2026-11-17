@@ -263,7 +263,7 @@ kamayoq does not check annotations at start, so run mypy against the Protocol.
 
 | Code | Meaning |
 |---|---|
-| 2 | A setting or the TOML file is not valid. The message names the setting, not its value. |
+| 2 | A setting or the TOML file is not valid. The message names the setting. It shows no value, except the bad entries of `KAMAYOQ_PLUGINS`. |
 | 3 | The server cannot open the port, for example because the port is in use. |
 | 4 | A plugin on the allowlist cannot load, or does not match its Protocol. The message names each plugin. |
 
