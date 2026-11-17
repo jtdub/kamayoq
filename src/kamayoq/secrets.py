@@ -11,6 +11,8 @@ from typing import Protocol
 
 from pydantic import SecretStr
 
+from kamayoq.settings import Settings
+
 SECRET_SCHEME = "secret://"
 SECRET_NAME = re.compile(r"[a-z][a-z0-9_]{0,127}")
 ENV_SECRET_PREFIX = "KAMAYOQ_SECRET_"
@@ -223,3 +225,17 @@ class FileSecretStore:
             raise SecretNotFoundError(f"{reference} is empty")
         remember(value, reference)
         return SecretStr(value)
+
+
+def build_secret_store(settings: Settings) -> SecretStore:
+    """Return the secret store that KAMAYOQ_SECRETS_BACKEND selects.
+
+    The env backend makes each non-empty KAMAYOQ_SECRET_ value a known value at
+    start. The file backend reads no file at start.
+    """
+    if settings.secrets_backend == "file":
+        return FileSecretStore(settings.secrets_dir)
+    for variable, value in os.environ.items():
+        if variable.startswith(ENV_SECRET_PREFIX) and value:
+            remember(value, variable)
+    return EnvSecretStore()

@@ -18,6 +18,7 @@ from kamayoq.secrets import (
     FileSecretStore,
     SecretNotFoundError,
     SecretStore,
+    build_secret_store,
     parse_reference,
     redact,
     remember,
@@ -418,3 +419,55 @@ def test_store_warns_for_a_short_value_and_names_the_reference(
 def test_store_matches_the_secret_store_protocol(store_class: type) -> None:
     """Match SecretStore with the plugin check."""
     assert protocol_mismatches(store_class, SecretStore) == []
+
+
+DATABASE_URL = "postgresql://k@h:5/d"
+
+
+def test_env_backend_makes_each_secret_variable_a_known_value_at_start(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Hide each KAMAYOQ_SECRET_ value of 4 or more characters before any get."""
+    caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
+    monkeypatch.setenv("KAMAYOQ_SECRET_SLACK_TOKEN", "xoxb-1234")
+    monkeypatch.setenv("KAMAYOQ_SECRET_MCP_KEY", "mcp-key-5678")
+    monkeypatch.setenv("KAMAYOQ_SECRET_EMPTY", "")
+    monkeypatch.setenv("KAMAYOQ_SECRET_PIN", "123")
+    monkeypatch.setenv("OTHER_TOKEN", "not-a-secret")
+    store = build_secret_store(Settings(database_url=DATABASE_URL))
+    assert isinstance(store, EnvSecretStore)
+    assert redact("xoxb-1234 mcp-key-5678 not-a-secret 123") == (
+        f"{MASK} {MASK} not-a-secret 123"
+    )
+    assert [r.getMessage() for r in caplog.records] == [
+        "KAMAYOQ_SECRET_PIN is shorter than 4 characters or is only white space, "
+        "so log lines do not hide it"
+    ]
+
+
+def test_file_backend_reads_no_file_at_start(tmp_path: Path) -> None:
+    """Give a FileSecretStore for the directory, and add no known value."""
+    (tmp_path / "slack_token").write_text("v-123456", encoding="utf-8")
+    settings = Settings(
+        database_url=DATABASE_URL, secrets_backend="file", secrets_dir=tmp_path
+    )
+    store = build_secret_store(settings)
+    assert isinstance(store, FileSecretStore)
+    assert store.directory == tmp_path
+    assert redact("v-123456") == "v-123456"
+
+
+def test_create_app_holds_an_env_store_by_default() -> None:
+    """Put an EnvSecretStore in app.state.secrets."""
+    app = create_app(Settings(database_url=DATABASE_URL))
+    assert isinstance(app.state.secrets, EnvSecretStore)
+
+
+def test_create_app_holds_a_file_store_for_the_file_backend(tmp_path: Path) -> None:
+    """Put a FileSecretStore of the secrets directory in app.state.secrets."""
+    settings = Settings(
+        database_url=DATABASE_URL, secrets_backend="file", secrets_dir=tmp_path
+    )
+    app = create_app(settings)
+    assert isinstance(app.state.secrets, FileSecretStore)
+    assert app.state.secrets.directory == tmp_path
