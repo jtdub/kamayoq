@@ -185,7 +185,7 @@ def test_plugin_not_on_allowlist_is_not_imported(
     [module] = install_greeters(
         tmp_path,
         monkeypatch,
-        [("fake-greeter", "1.0", [KIND_POINT], 'raise RuntimeError("imported")\n')],
+        [("fake-greeter", "1.0", [KIND_POINT], KIND)],
     )
     assert load_plugins(frozenset(), (GREETER_GROUP,)) == {}
     assert module not in sys.modules
