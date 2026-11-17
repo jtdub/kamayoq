@@ -266,10 +266,15 @@ def test_file_store_reads_the_file_again_at_each_get(tmp_path: Path) -> None:
 FILE_CONTENT = "file-content-1234"
 
 
+def file_error(directory: Path) -> str:
+    """Return the message of the error that the file store raises for slack_token."""
+    return get_error(FileSecretStore(directory), "slack_token")
+
+
 def test_file_store_rejects_a_missing_file(tmp_path: Path) -> None:
     """Name the file to add."""
     path = tmp_path.resolve() / "slack_token"
-    assert get_error(FileSecretStore(tmp_path), "slack_token") == (
+    assert file_error(tmp_path) == (
         f"secret://slack_token is not set. Add the file {path}"
     )
 
@@ -278,17 +283,14 @@ def test_file_store_rejects_a_missing_file(tmp_path: Path) -> None:
 def test_file_store_rejects_an_empty_file(tmp_path: Path, content: bytes) -> None:
     """Treat an empty file, or a file with one line end only, as empty."""
     (tmp_path / "slack_token").write_bytes(content)
-    message = get_error(FileSecretStore(tmp_path), "slack_token")
-    assert message == "secret://slack_token is empty"
+    assert file_error(tmp_path) == "secret://slack_token is empty"
 
 
 def test_file_store_rejects_a_directory(tmp_path: Path) -> None:
     """Read regular files only."""
     path = tmp_path.resolve() / "slack_token"
     path.mkdir()
-    assert get_error(FileSecretStore(tmp_path), "slack_token") == (
-        f"secret://slack_token: {path} is not a regular file"
-    )
+    assert file_error(tmp_path) == f"secret://slack_token: {path} is not a regular file"
 
 
 def test_file_store_rejects_a_fifo_and_does_not_block(tmp_path: Path) -> None:
@@ -297,24 +299,13 @@ def test_file_store_rejects_a_fifo_and_does_not_block(tmp_path: Path) -> None:
     os.mkfifo(path)
     messages: list[str] = []
     reader = threading.Thread(
-        target=lambda: messages.append(
-            get_error(FileSecretStore(tmp_path), "slack_token")
-        ),
+        target=lambda: messages.append(file_error(tmp_path)),
         daemon=True,
     )
     reader.start()
     reader.join(timeout=1)
     assert not reader.is_alive(), "the read of the FIFO blocked"
     assert messages == [f"secret://slack_token: {path} is not a regular file"]
-
-
-def test_file_store_rejects_a_file_that_is_too_large(tmp_path: Path) -> None:
-    """Reject a file of more than 64 KiB, and show no content."""
-    path = tmp_path.resolve() / "slack_token"
-    path.write_text(FILE_CONTENT * (MAX_SECRET_FILE_BYTES // len(FILE_CONTENT) + 1))
-    message = get_error(FileSecretStore(tmp_path), "slack_token")
-    assert message == f"secret://slack_token: {path} is larger than 65536 bytes"
-    assert FILE_CONTENT not in message
 
 
 def test_file_store_accepts_a_file_of_64_kib(tmp_path: Path) -> None:
@@ -325,21 +316,26 @@ def test_file_store_accepts_a_file_of_64_kib(tmp_path: Path) -> None:
 
 
 def test_file_store_rejects_a_file_of_one_byte_over_64_kib(tmp_path: Path) -> None:
-    """Reject a file of the size limit plus one byte."""
+    """Reject a file of the size limit plus one byte, and show no content."""
     path = tmp_path.resolve() / "slack_token"
-    path.write_bytes(b"x" * (MAX_SECRET_FILE_BYTES + 1))
-    assert get_error(FileSecretStore(tmp_path), "slack_token") == (
-        f"secret://slack_token: {path} is larger than 65536 bytes"
-    )
+    content = FILE_CONTENT * (MAX_SECRET_FILE_BYTES // len(FILE_CONTENT) + 1)
+    path.write_text(content[: MAX_SECRET_FILE_BYTES + 1], encoding="utf-8")
+    message = file_error(tmp_path)
+    assert message == f"secret://slack_token: {path} is larger than 65536 bytes"
+    assert FILE_CONTENT not in message
 
 
 def test_file_store_rejects_a_file_that_is_not_utf_8(tmp_path: Path) -> None:
-    """Reject bytes that are not UTF-8, and show no content."""
+    """Reject bytes that are not UTF-8, with no content and no chained error."""
     path = tmp_path.resolve() / "slack_token"
     path.write_bytes(FILE_CONTENT.encode() + b"\xff\xfe")
-    message = get_error(FileSecretStore(tmp_path), "slack_token")
+    with pytest.raises(SecretNotFoundError) as error_info:
+        asyncio.run(FileSecretStore(tmp_path).get("slack_token"))
+    message = str(error_info.value)
     assert message == f"secret://slack_token: {path} is not UTF-8 text"
     assert FILE_CONTENT not in message
+    assert error_info.value.__cause__ is None
+    assert error_info.value.__suppress_context__ is True
 
 
 def test_file_store_rejects_a_link_to_a_file_outside_the_directory(
@@ -351,7 +347,7 @@ def test_file_store_rejects_a_link_to_a_file_outside_the_directory(
     outside = tmp_path.resolve() / "outside"
     outside.write_text(FILE_CONTENT, encoding="utf-8")
     (directory / "slack_token").symlink_to(outside)
-    message = get_error(FileSecretStore(directory), "slack_token")
+    message = file_error(directory)
     assert message == f"secret://slack_token: {outside} is outside {directory}"
     assert FILE_CONTENT not in message
 
@@ -374,7 +370,7 @@ def test_file_store_reports_an_os_error_with_no_content(
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr("kamayoq.secrets.os.open", refuse)
-    assert get_error(FileSecretStore(tmp_path), "slack_token") == (
+    assert file_error(tmp_path) == (
         f"secret://slack_token: cannot read {path}: Permission denied"
     )
 
@@ -383,15 +379,6 @@ def test_file_store_rejects_a_name_that_is_not_valid(tmp_path: Path) -> None:
     """Check the name before the store reads a file."""
     (tmp_path / "Slack").write_text("v-123456", encoding="utf-8")
     assert get_error(FileSecretStore(tmp_path), "Slack") == NOT_VALID_NAME
-
-
-def test_error_of_a_file_store_has_no_cause_with_content(tmp_path: Path) -> None:
-    """Raise with no chained exception, so no content goes into the traceback."""
-    (tmp_path / "slack_token").write_bytes(FILE_CONTENT.encode() + b"\xff")
-    with pytest.raises(SecretNotFoundError) as error_info:
-        asyncio.run(FileSecretStore(tmp_path).get("slack_token"))
-    assert error_info.value.__cause__ is None
-    assert error_info.value.__suppress_context__ is True
 
 
 def test_each_store_makes_its_value_a_known_value(tmp_path: Path) -> None:

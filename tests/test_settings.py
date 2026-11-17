@@ -8,6 +8,7 @@ import pytest
 from kamayoq.settings import ENV_PREFIX, InvalidSettingsError, Settings, load_settings
 
 DATABASE_URL = "postgresql://kamayoq:secret@db.example:5432/kamayoq"
+DEFAULT_SECRETS_DIR = Path("/run/secrets")
 TOML_SETTINGS = """\
 host = "0.0.0.0"
 port = 8001
@@ -49,7 +50,7 @@ def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None
     assert settings.api_docs is False
     assert settings.plugins == frozenset()
     assert settings.secrets_backend == "env"
-    assert settings.secrets_dir == Path("/run/secrets")
+    assert settings.secrets_dir == DEFAULT_SECRETS_DIR
 
 
 def test_missing_database_url_names_field_and_env_name() -> None:
@@ -291,7 +292,6 @@ def test_unknown_kamayoq_env_var_is_ignored(
     assert load_settings().port == 8000
 
 
-DEFAULT_SECRETS_DIR = Path("/run/secrets")
 SECRETS_DIR_ERROR = (
     "- secrets_dir (KAMAYOQ_SECRETS_DIR): "
     "Value error, must be a directory when secrets_backend is file"

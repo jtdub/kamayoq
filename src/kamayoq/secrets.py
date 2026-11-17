@@ -11,11 +11,11 @@ from typing import Protocol
 
 from pydantic import SecretStr
 
-from kamayoq.settings import Settings
+from kamayoq.settings import ENV_PREFIX, Settings
 
 SECRET_SCHEME = "secret://"
 SECRET_NAME = re.compile(r"[a-z][a-z0-9_]{0,127}")
-ENV_SECRET_PREFIX = "KAMAYOQ_SECRET_"
+ENV_SECRET_PREFIX = ENV_PREFIX + "SECRET_"
 MAX_SECRET_FILE_BYTES = 64 * 1024
 MASK = "**********"
 MIN_REDACTED_LENGTH = 4
@@ -138,6 +138,18 @@ async def resolve(store: SecretStore, reference: str) -> SecretStr:
     return await store.get(parse_reference(reference))
 
 
+def _known_secret(value: str, reference: str) -> SecretStr:
+    """Return a non-empty value as a SecretStr, and make it a known value.
+
+    Raises:
+        SecretNotFoundError: If the value is empty.
+    """
+    if not value:
+        raise SecretNotFoundError(f"{reference} is empty")
+    remember(value, reference)
+    return SecretStr(value)
+
+
 class EnvSecretStore:
     """Read the secret <name> from the variable KAMAYOQ_SECRET_<NAME>."""
 
@@ -153,13 +165,7 @@ class EnvSecretStore:
         value = self._environ.get(variable)
         if value is None:
             raise SecretNotFoundError(f"{reference} is not set. Set {variable}")
-        if not value:
-            raise SecretNotFoundError(f"{reference} is empty")
-        remember(value, reference)
-        return SecretStr(value)
-
-
-_SECRET_FILE_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+        return _known_secret(value, reference)
 
 
 def _read_secret_file(path: Path, reference: str) -> bytes:
@@ -169,22 +175,22 @@ def _read_secret_file(path: Path, reference: str) -> bytes:
         SecretNotFoundError: If the file is not a regular file or is too large.
         OSError: If the file cannot be read.
     """
-    too_large = SecretNotFoundError(
+    too_large_message = (
         f"{reference}: {path} is larger than {MAX_SECRET_FILE_BYTES} bytes"
     )
-    descriptor = os.open(path, _SECRET_FILE_FLAGS)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     try:
         status = os.fstat(descriptor)
         if not stat.S_ISREG(status.st_mode):
             raise SecretNotFoundError(f"{reference}: {path} is not a regular file")
         if status.st_size > MAX_SECRET_FILE_BYTES:
-            raise too_large
+            raise SecretNotFoundError(too_large_message)
         with os.fdopen(descriptor, "rb", closefd=False) as file:
             data = file.read(MAX_SECRET_FILE_BYTES + 1)
     finally:
         os.close(descriptor)
     if len(data) > MAX_SECRET_FILE_BYTES:
-        raise too_large
+        raise SecretNotFoundError(too_large_message)
     return data
 
 
@@ -220,11 +226,7 @@ class FileSecretStore:
                 f"{reference}: cannot read {path}: {error.strerror}"
             ) from None
         line_end = "\r\n" if text.endswith("\r\n") else "\n"
-        value = text.removesuffix(line_end)
-        if not value:
-            raise SecretNotFoundError(f"{reference} is empty")
-        remember(value, reference)
-        return SecretStr(value)
+        return _known_secret(text.removesuffix(line_end), reference)
 
 
 def build_secret_store(settings: Settings) -> SecretStore:
