@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from kamayoq.settings import ENV_PREFIX, InvalidSettingsError, Settings, load_settings
+from kamayoq.cli import main
+from kamayoq.settings import (
+    ENV_PREFIX,
+    InvalidSettingsError,
+    Settings,
+    load_settings,
+    require_secure_url,
+)
 
 DATABASE_URL = "postgresql://kamayoq:secret@db.example:5432/kamayoq"
 TOML_SETTINGS = """\
@@ -48,6 +55,9 @@ def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None
     assert settings.log_level == "INFO"
     assert settings.api_docs is False
     assert settings.plugins == frozenset()
+    assert settings.oidc_issuer is None
+    assert settings.oidc_audience is None
+    assert settings.oidc_groups_claim == "groups"
 
 
 def test_missing_database_url_names_field_and_env_name() -> None:
@@ -287,3 +297,119 @@ def test_unknown_kamayoq_env_var_is_ignored(
     monkeypatch.setenv("KAMAYOQ_REQUIRE_DOCKER", "1")
     monkeypatch.setenv("KAMAYOQ_NOT_A_SETTING", "x")
     assert load_settings().port == 8000
+
+
+OIDC_PAIR_ERROR = (
+    "- oidc_audience (KAMAYOQ_OIDC_AUDIENCE): Value error, set both "
+    "KAMAYOQ_OIDC_ISSUER and KAMAYOQ_OIDC_AUDIENCE, or neither"
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("KAMAYOQ_OIDC_ISSUER", "https://idp.example.com/realms/kamayoq"),
+        ("KAMAYOQ_OIDC_AUDIENCE", "kamayoq-api"),
+    ],
+)
+def test_oidc_issuer_and_audience_must_be_set_together(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    database_url: str,
+    name: str,
+    value: str,
+) -> None:
+    """Exit 2 with both variable names when only one OIDC setting is set."""
+
+    def fail_run(*args: object, **kwargs: object) -> None:
+        pytest.fail("uvicorn started with bad settings")
+
+    monkeypatch.setattr("kamayoq.cli.uvicorn.run", fail_run)
+    monkeypatch.setenv(name, value)
+    assert main(["serve"]) == 2
+    err = capsys.readouterr().err
+    assert err == f"kamayoq: Settings are not valid:\n{OIDC_PAIR_ERROR}\n"
+
+
+def test_oidc_issuer_and_audience_load_together(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Keep the issuer text as given when both OIDC settings are set."""
+    monkeypatch.setenv("KAMAYOQ_OIDC_ISSUER", "https://idp.example.com")
+    monkeypatch.setenv("KAMAYOQ_OIDC_AUDIENCE", "kamayoq-api")
+    monkeypatch.setenv("KAMAYOQ_OIDC_GROUPS_CLAIM", "roles")
+    settings = load_settings()
+    assert settings.oidc_issuer == "https://idp.example.com"
+    assert settings.oidc_audience == "kamayoq-api"
+    assert settings.oidc_groups_claim == "roles"
+
+
+def test_bad_oidc_issuer_gives_one_error_for_the_issuer(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Name the issuer only, not the pair, when the issuer itself is not valid."""
+    monkeypatch.setenv("KAMAYOQ_OIDC_ISSUER", "http://idp.example.com")
+    monkeypatch.setenv("KAMAYOQ_OIDC_AUDIENCE", "kamayoq-api")
+    message = load_error()
+    assert "- oidc_issuer (KAMAYOQ_OIDC_ISSUER): " in message
+    assert "oidc_audience" not in message
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://idp.example.com",
+        "https://idp.example.com?x=1",
+        "https://idp.example.com#x",
+        "https://u:p@idp.example.com",
+        "https://idp.example.com/a b",
+        "",
+        "https://",
+        "ftp://idp.example.com",
+        "http://localhost.example.com",
+        "https://idp.example.com?",
+    ],
+)
+def test_insecure_or_unusual_url_is_rejected(url: str) -> None:
+    """Reject a URL that is not https, or that has extra parts."""
+    with pytest.raises(ValueError):
+        require_secure_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8080/realms/x",
+        "http://127.0.0.1/x",
+        "http://[::1]/x",
+        "https://idp.example.com/realms/x",
+        "https://idp.example.com/realms/x/",
+    ],
+)
+def test_https_or_loopback_url_is_accepted_unchanged(url: str) -> None:
+    """Return an https URL or a loopback http URL as the same text."""
+    assert require_secure_url(url) == url
+
+
+def test_insecure_oidc_issuer_setting_names_the_field(
+    monkeypatch: pytest.MonkeyPatch, database_url: str
+) -> None:
+    """Stop with a message that names the issuer setting and the reason."""
+    monkeypatch.setenv("KAMAYOQ_OIDC_ISSUER", "http://idp.example.com")
+    monkeypatch.setenv("KAMAYOQ_OIDC_AUDIENCE", "kamayoq-api")
+    assert "- oidc_issuer (KAMAYOQ_OIDC_ISSUER): Value error, " in load_error()
+
+
+def test_toml_file_supplies_oidc_settings(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Read the OIDC settings from the TOML file."""
+    config_file(
+        monkeypatch,
+        tmp_path / "kamayoq.toml",
+        'oidc_issuer = "http://localhost:8080/realms/kamayoq"\n'
+        'oidc_audience = "kamayoq-api"\n',
+    )
+    settings = load_settings()
+    assert settings.oidc_issuer == "http://localhost:8080/realms/kamayoq"
+    assert settings.oidc_audience == "kamayoq-api"

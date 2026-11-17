@@ -189,6 +189,9 @@ WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has
 | `KAMAYOQ_LOG_LEVEL` | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`, in upper or lower case. |
 | `KAMAYOQ_API_DOCS` | `api_docs` | `false` | `true` shows `/docs`, `/redoc`, and `/openapi.json`. |
 | `KAMAYOQ_PLUGINS` | `plugins` | Not set | The plugins to load, as a comma list of `group:name`. See [Plugins](#plugins). |
+| `KAMAYOQ_OIDC_ISSUER` | `oidc_issuer` | Not set | The issuer URL of the OIDC provider. It must use `https`, or `http` on `localhost`, `127.0.0.1`, or `[::1]`. Set it together with `KAMAYOQ_OIDC_AUDIENCE`. Checked at start. Not used for login until a later release. |
+| `KAMAYOQ_OIDC_AUDIENCE` | `oidc_audience` | Not set | The audience that an access token must have. Set it together with `KAMAYOQ_OIDC_ISSUER`. Checked at start. Not used for login until a later release. |
+| `KAMAYOQ_OIDC_GROUPS_CLAIM` | `oidc_groups_claim` | `groups` | The token claim that holds the groups of the user. Checked at start. Not used for login until a later release. |
 | `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
 
 Put `KAMAYOQ_DATABASE_URL` in the environment, not in the TOML file, because the URL can contain a password.

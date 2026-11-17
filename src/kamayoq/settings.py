@@ -5,8 +5,15 @@ import re
 import tomllib
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, PostgresDsn, ValidationError, field_validator
+from pydantic import (
+    Field,
+    PostgresDsn,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+)
 from pydantic_settings import (
     BaseSettings,
     NoDecode,
@@ -20,6 +27,7 @@ ENV_PREFIX = "KAMAYOQ_"
 CONFIG_FILE_ENV = "KAMAYOQ_CONFIG_FILE"
 LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
 PLUGIN_REFERENCE = re.compile(r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._-]*")
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
@@ -49,6 +57,30 @@ def config_file_path() -> Path | None:
     return path
 
 
+def require_secure_url(value: str) -> str:
+    """Return the URL unchanged if it is https, or http on a loopback host.
+
+    Raises:
+        ValueError: If the URL is empty, has white space, user info, a query, or
+            a fragment, or uses another scheme.
+    """
+    if not value or any(character.isspace() for character in value):
+        raise ValueError("the URL must not be empty or contain white space")
+    if "?" in value or "#" in value:
+        raise ValueError("the URL must not have a query or a fragment")
+    parts = urlsplit(value)
+    if "@" in parts.netloc:
+        raise ValueError("the URL must not have user info")
+    if not parts.hostname:
+        raise ValueError("the URL must have a host")
+    is_loopback_http = parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS
+    if parts.scheme != "https" and not is_loopback_http:
+        raise ValueError(
+            "the URL must use https, or http on localhost, 127.0.0.1, or [::1]"
+        )
+    return value
+
+
 class Settings(BaseSettings):
     """Validated settings of the kamayoq server.
 
@@ -69,6 +101,9 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     api_docs: bool = False
     plugins: Annotated[frozenset[str], NoDecode] = frozenset()
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = Field(default=None, min_length=1, validate_default=True)
+    oidc_groups_claim: str = Field(default="groups", min_length=1)
 
     @classmethod
     def settings_customise_sources(
@@ -109,6 +144,31 @@ class Settings(BaseSettings):
             raise ValueError(
                 "each entry must be group:name, for example runtimes:langgraph. "
                 f"Not valid: {', '.join(repr(item) for item in bad)}"
+            )
+        return value
+
+    @field_validator("oidc_issuer", mode="after")
+    @classmethod
+    def require_secure_issuer(cls, value: str | None) -> str | None:
+        """Reject an issuer that is not https or a loopback http URL."""
+        return value if value is None else require_secure_url(value)
+
+    @field_validator("oidc_audience", mode="after")
+    @classmethod
+    def require_issuer_with_audience(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
+        """Reject one of the issuer and the audience without the other.
+
+        An issuer that failed its own check is not in the data, so it gives no
+        second error here.
+        """
+        if "oidc_issuer" not in info.data:
+            return value
+        if (info.data["oidc_issuer"] is None) != (value is None):
+            raise ValueError(
+                f"set both {ENV_PREFIX}OIDC_ISSUER and {ENV_PREFIX}OIDC_AUDIENCE, "
+                "or neither"
             )
         return value
 
