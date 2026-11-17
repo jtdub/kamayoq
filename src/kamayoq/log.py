@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 
 from kamayoq.secrets import redact
 
+_EXCEPTION_FORMATTER = logging.Formatter()
+
 
 class JsonFormatter(logging.Formatter):
     """Format each log record as one JSON object."""
@@ -47,12 +49,14 @@ class SecretFilter(logging.Filter):
             message = str(record.msg)
         clean.msg = redact(message)
         clean.args = None
-        if record.exc_info:
-            exception_text = logging.Formatter().formatException(record.exc_info)
+        exception_text = (
+            _EXCEPTION_FORMATTER.formatException(record.exc_info)
+            if record.exc_info
+            else record.exc_text
+        )
+        if exception_text:
             clean.exc_text = redact(exception_text)
-            clean.exc_info = None
-        elif record.exc_text:
-            clean.exc_text = redact(record.exc_text)
+        clean.exc_info = None
         if record.stack_info:
             clean.stack_info = redact(record.stack_info)
         return clean

@@ -26,9 +26,8 @@ def create_app(settings: Settings) -> FastAPI:
     """
     password = settings.database_url.hosts()[0]["password"]
     if password:
-        remember(password, "the database password")
-        if unquote(password) != password:
-            remember(unquote(password), "the database password")
+        for form in {password, unquote(password)}:
+            remember(form, "the database password")
     registry = plugins.load_plugins(settings.plugins, plugins.PLUGIN_GROUPS)
     engine = create_db_engine(sqlalchemy_url(settings))
 

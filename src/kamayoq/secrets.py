@@ -60,15 +60,16 @@ def redact(text: str) -> str:
     spans = sorted(span for value in values for span in _match_spans(text, value))
     if not spans:
         return text
+    merged = [list(spans[0])]
+    for start, end in spans[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
     parts = []
     position = 0
-    merged_start, merged_end = spans[0]
-    for start, end in spans[1:]:
-        if start <= merged_end:
-            merged_end = max(merged_end, end)
-            continue
-        parts.append(text[position:merged_start] + MASK)
-        position = merged_end
-        merged_start, merged_end = start, end
-    parts.append(text[position:merged_start] + MASK + text[merged_end:])
+    for start, end in merged:
+        parts.append(text[position:start] + MASK)
+        position = end
+    parts.append(text[position:])
     return "".join(parts)

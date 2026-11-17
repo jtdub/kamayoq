@@ -50,9 +50,9 @@ def start_logging() -> RecordCollector:
     return collector
 
 
-def stderr_records(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
-    """Return each JSON line of stderr as a dict."""
-    return [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+def json_lines(text: str) -> list[dict[str, Any]]:
+    """Return each JSON line of the text as a dict."""
+    return [json.loads(line) for line in text.splitlines()]
 
 
 def make_record(**fields: Any) -> logging.LogRecord:
@@ -133,7 +133,7 @@ def test_known_value_is_masked_in_message_args_and_exception(
         logger.exception("call failed")
     err = capsys.readouterr().err
     assert SECRET_VALUE not in err
-    records = [json.loads(line) for line in err.splitlines()]
+    records = json_lines(err)
     assert [r["message"] for r in records] == [
         f"token {MASK} in the message",
         f"token {MASK} in the args",
@@ -153,17 +153,11 @@ def test_known_value_is_masked_in_stack_info(
 ) -> None:
     """Mask the value in the stack text of a record."""
     collector = start_logging()
-    record = logging.makeLogRecord(
-        {
-            "name": "kamayoq.test",
-            "levelno": logging.INFO,
-            "levelname": "INFO",
-            "msg": "x",
-            "stack_info": f"Stack {SECRET_VALUE}",
-        }
+    record = make_record(
+        levelno=logging.INFO, msg="x", args=(), stack_info=f"Stack {SECRET_VALUE}"
     )
     logging.getLogger().handle(record)
-    [line] = stderr_records(capsys)
+    [line] = json_lines(capsys.readouterr().err)
     assert line["stack_info"] == f"Stack {MASK}"
     assert collector.records[0].stack_info == f"Stack {SECRET_VALUE}"
 
@@ -174,18 +168,15 @@ def test_cached_exception_text_is_masked(
 ) -> None:
     """Mask the value in exc_text that another formatter cached."""
     collector = start_logging()
-    record = logging.makeLogRecord(
-        {
-            "name": "kamayoq.test",
-            "levelno": logging.ERROR,
-            "levelname": "ERROR",
-            "msg": "x",
-            "exc_info": None,
-            "exc_text": f"Traceback\nRuntimeError: {SECRET_VALUE}",
-        }
+    record = make_record(
+        levelno=logging.ERROR,
+        levelname="ERROR",
+        msg="x",
+        args=(),
+        exc_text=f"Traceback\nRuntimeError: {SECRET_VALUE}",
     )
     logging.getLogger().handle(record)
-    [line] = stderr_records(capsys)
+    [line] = json_lines(capsys.readouterr().err)
     assert line["exc_info"] == f"Traceback\nRuntimeError: {MASK}"
     assert collector.records[0].exc_text == f"Traceback\nRuntimeError: {SECRET_VALUE}"
 
@@ -200,7 +191,7 @@ def test_bad_args_do_not_raise_and_the_line_has_no_known_value(
     err = capsys.readouterr().err
     assert SECRET_VALUE not in err
     assert "Logging error" not in err
-    [line] = [json.loads(text) for text in err.splitlines()]
+    [line] = json_lines(err)
     assert line["message"] == f"{MASK} count %d"
 
 
