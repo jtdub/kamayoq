@@ -61,8 +61,8 @@ def require_secure_url(value: str) -> str:
     """Return the URL unchanged if it is https, or http on a loopback host.
 
     Raises:
-        ValueError: If the URL is empty, has white space, user info, a query, or
-            a fragment, or uses another scheme.
+        ValueError: If the URL is empty, has white space, user info, a query, a
+            fragment, or no host, or uses another scheme.
     """
     if not value or any(character.isspace() for character in value):
         raise ValueError("the URL must not be empty or contain white space")
