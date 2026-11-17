@@ -188,6 +188,7 @@ WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has
 | `KAMAYOQ_READINESS_TIMEOUT` | `readiness_timeout` | `2.0` | The seconds that `/readyz` waits for Postgres. |
 | `KAMAYOQ_LOG_LEVEL` | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`, in upper or lower case. |
 | `KAMAYOQ_API_DOCS` | `api_docs` | `false` | `true` shows `/docs`, `/redoc`, and `/openapi.json`. |
+| `KAMAYOQ_PLUGINS` | `plugins` | Not set | The plugins to load, as a comma list of `group:name`. See [Plugins](#plugins). |
 | `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
 
 Put `KAMAYOQ_DATABASE_URL` in the environment, not in the TOML file, because the URL can contain a password.
@@ -203,6 +204,50 @@ api_docs = false
 
 libpq reads the `PG*` environment variables and `~/.pgpass` for a part that the URL does not give, for example the password.
 The URL must have a host. For a Unix socket, use `postgresql://user@localhost/db?host=/run/postgresql`.
+
+### Plugins
+
+A plugin is a class in a Python package that adds a runtime, a channel, or another part to kamayoq.
+kamayoq has no plugin groups yet. The Protocol issues add them.
+
+WARNING: A plugin runs in the kamayoq process with the same access as kamayoq. Add only a package that you trust.
+
+To allow plugins, list each one as `group:name` in `KAMAYOQ_PLUGINS`:
+
+```bash
+KAMAYOQ_PLUGINS=runtimes:langgraph,channels:slack
+```
+
+In the TOML file, use an array: `plugins = ["runtimes:langgraph", "channels:slack"]`. A TOML string uses the same comma form.
+
+When two packages declare the same plugin, the start stops.
+If the real package is not installed, another package can declare its name. The `Loaded plugin` log line names the package that kamayoq loaded.
+kamayoq does not import an installed plugin that the list does not name, and it writes one log line for it.
+
+These start errors give exit code 4:
+
+- An entry names a group that does not exist.
+- No installed package declares the plugin.
+- Two packages declare the plugin.
+- The plugin does not load.
+- The class does not match the Protocol of its group.
+
+A package declares a plugin as an entry point in its `pyproject.toml`:
+
+```toml
+[project.entry-points."kamayoq.runtimes"]
+langgraph = "kamayoq_langgraph:LangGraphRuntime"
+```
+
+kamayoq checks each plugin at start:
+
+- The entry point names a class.
+- The class defines each member of the Protocol.
+- An `async` method stays `async`.
+- The parameter names are the same, and in the same order.
+
+Declare a data member as a class attribute or an annotation, not only in `__init__`.
+kamayoq does not check annotations at start, so run mypy against the Protocol.
 
 ### Endpoints
 
@@ -220,6 +265,7 @@ The URL must have a host. For a Unix socket, use `postgresql://user@localhost/db
 |---|---|
 | 2 | A setting or the TOML file is not valid. The message names the setting, not its value. |
 | 3 | The server cannot open the port, for example because the port is in use. |
+| 4 | A plugin on the allowlist cannot load, or does not match its Protocol. The message names each plugin. |
 
 ## Contributing
 

@@ -1,0 +1,2 @@
+Added the KAMAYOQ_PLUGINS setting. kamayoq imports a plugin package only when this comma list names it.
+Added exit code 4. kamayoq serve stops before it opens the port when an allowed plugin cannot load or does not match its interface.
