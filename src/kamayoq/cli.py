@@ -9,9 +9,11 @@ import uvicorn
 
 from kamayoq.api.app import create_app
 from kamayoq.log import configure_logging
+from kamayoq.plugins import PluginError
 from kamayoq.settings import InvalidSettingsError, load_settings
 
 BAD_SETTINGS_EXIT_CODE = 2
+BAD_PLUGINS_EXIT_CODE = 4
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,7 +33,7 @@ def serve() -> int:
     """Load the settings and run the API server until it stops.
 
     A bad setting prints a plain-text message to stderr, before the server opens a
-    port, and gives exit code 2.
+    port, and gives exit code 2. A plugin error gives exit code 4.
     """
     try:
         settings = load_settings()
@@ -39,8 +41,13 @@ def serve() -> int:
         print(f"kamayoq: {error}", file=sys.stderr)
         return BAD_SETTINGS_EXIT_CODE
     configure_logging(settings.log_level)
+    try:
+        app = create_app(settings)
+    except PluginError as error:
+        print(f"kamayoq: {error}", file=sys.stderr)
+        return BAD_PLUGINS_EXIT_CODE
     uvicorn.run(
-        create_app(settings),
+        app,
         host=settings.host,
         port=settings.port,
         log_config=None,
