@@ -100,6 +100,23 @@ def test_serve_with_bad_settings_exits_two_and_names_field(
     assert "database_url (KAMAYOQ_DATABASE_URL): Field required" in err
 
 
+def test_serve_with_bad_secrets_backend_exits_two_before_uvicorn(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Exit 2 and name KAMAYOQ_SECRETS_BACKEND before the server starts."""
+
+    def fail_run(*args: object, **kwargs: object) -> None:
+        pytest.fail("uvicorn started with a bad secrets backend")
+
+    monkeypatch.setattr("kamayoq.cli.uvicorn.run", fail_run)
+    monkeypatch.setenv("KAMAYOQ_DATABASE_URL", UNUSED_DATABASE_URL)
+    monkeypatch.setenv("KAMAYOQ_SECRETS_BACKEND", "vault")
+    assert main(["serve"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("kamayoq: Settings are not valid:")
+    assert "secrets_backend (KAMAYOQ_SECRETS_BACKEND): " in err
+
+
 SYNC_GREETER = """\
 class Kind:
     name = "kind"
