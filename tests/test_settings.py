@@ -47,6 +47,7 @@ def test_defaults_apply_when_only_database_url_is_set(database_url: str) -> None
     assert settings.readiness_timeout == 2.0
     assert settings.log_level == "INFO"
     assert settings.api_docs is False
+    assert settings.plugins == frozenset()
 
 
 def test_missing_database_url_names_field_and_env_name() -> None:
@@ -156,6 +157,75 @@ def test_env_value_wins_over_toml_value(
     config_file(monkeypatch, tmp_path / "kamayoq.toml", TOML_SETTINGS)
     monkeypatch.setenv("KAMAYOQ_PORT", "9000")
     assert load_settings().port == 9000
+
+
+PLUGIN_ERROR = (
+    "- plugins (KAMAYOQ_PLUGINS): Value error, each entry must be group:name, "
+    "for example runtimes:langgraph. Not valid: "
+)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("runtimes:langgraph", {"runtimes:langgraph"}),
+        (
+            " runtimes:langgraph , channels:slack ",
+            {"channels:slack", "runtimes:langgraph"},
+        ),
+        ("a:b,a:b", {"a:b"}),
+        ("runtimes:Lang.Graph-2_x", {"runtimes:Lang.Graph-2_x"}),
+        ("", "''"),
+        ("runtimes", "'runtimes'"),
+        ("runtimes:", "'runtimes:'"),
+        (":langgraph", "':langgraph'"),
+        ("a:b:c", "'a:b:c'"),
+        ("a:b,", "''"),
+        ("Runtimes:x", "'Runtimes:x'"),
+        ("runtimes:lang graph", "'runtimes:lang graph'"),
+        ('["a:b"]', "'[\"a:b\"]'"),
+        ("b,a", "'a', 'b'"),
+    ],
+)
+def test_plugin_list_is_parsed_or_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+    value: str,
+    expected: set[str] | str,
+) -> None:
+    """Split the comma list, or name each entry that is not group:name."""
+    monkeypatch.setenv("KAMAYOQ_PLUGINS", value)
+    if isinstance(expected, set):
+        assert load_settings().plugins == expected
+    else:
+        assert PLUGIN_ERROR + expected in load_error()
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ('plugins = ["greeters:kind"]', {"greeters:kind"}),
+        ("plugins = []", set()),
+        (
+            'plugins = "greeters:kind, greeters:other"',
+            {"greeters:kind", "greeters:other"},
+        ),
+        ('plugins = ["greeters"]', "'greeters'"),
+    ],
+)
+def test_toml_file_supplies_plugin_list(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+    tmp_path: Path,
+    line: str,
+    expected: set[str] | str,
+) -> None:
+    """Read the plugin list from a TOML array, or from a comma list in a string."""
+    config_file(monkeypatch, tmp_path / "kamayoq.toml", line + "\n")
+    if isinstance(expected, set):
+        assert load_settings().plugins == expected
+    else:
+        assert PLUGIN_ERROR + expected in load_error()
 
 
 NOT_A_FILE = "KAMAYOQ_CONFIG_FILE names {path}, which is not a file."

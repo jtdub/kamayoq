@@ -29,3 +29,11 @@ def test_readme_lists_every_setting_and_the_run_command() -> None:
     missing = [name for name in setting_env_names() if name not in text]
     assert missing == []
     assert "uv run kamayoq serve" in text
+
+
+def test_readme_documents_plugins() -> None:
+    """Document the plugin list, the entry point declaration, and exit code 4."""
+    text = README.read_text(encoding="utf-8")
+    assert "### Plugins" in text
+    assert '[project.entry-points."kamayoq.' in text
+    assert "\n| 4 |" in text

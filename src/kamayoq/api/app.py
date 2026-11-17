@@ -6,6 +6,7 @@ from importlib.metadata import version
 
 from fastapi import FastAPI
 
+from kamayoq import plugins
 from kamayoq.api.health import ReadinessCheck, build_router
 from kamayoq.db.engine import create_db_engine, create_sessionmaker, sqlalchemy_url
 from kamayoq.settings import Settings
@@ -14,9 +15,13 @@ from kamayoq.settings import Settings
 def create_app(settings: Settings) -> FastAPI:
     """Return the API app for these settings.
 
-    The app holds one database engine and one session maker in app.state. It
-    disposes of the engine when it stops.
+    The app holds the plugin registry, one database engine, and one session maker
+    in app.state. It disposes of the engine when it stops.
+
+    Raises:
+        PluginError: If a plugin on the allowlist cannot load.
     """
+    registry = plugins.load_plugins(settings.plugins, plugins.PLUGIN_GROUPS)
     engine = create_db_engine(sqlalchemy_url(settings))
 
     @asynccontextmanager
@@ -33,6 +38,7 @@ def create_app(settings: Settings) -> FastAPI:
         redoc_url="/redoc" if docs else None,
         openapi_url="/openapi.json" if docs else None,
     )
+    app.state.plugins = registry
     app.state.engine = engine
     app.state.sessionmaker = create_sessionmaker(engine)
     check = ReadinessCheck(str(settings.database_url), settings.readiness_timeout)

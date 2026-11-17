@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from fake_plugins import GREETER_GROUP, install_fake_distribution
 from fastapi import FastAPI
 
 from kamayoq.cli import main
@@ -99,6 +100,49 @@ def test_serve_with_bad_settings_exits_two_and_names_field(
     assert "database_url (KAMAYOQ_DATABASE_URL): Field required" in err
 
 
+SYNC_GREETER = """\
+class Kind:
+    name = "kind"
+    ready = True
+
+    def greet(self, person):
+        return "Hello"
+
+    def close(self):
+        return None
+"""
+
+
+def test_serve_with_bad_plugin_exits_four_before_uvicorn(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Exit 4 before the server starts when a plugin does not match (AC-1)."""
+
+    def fail_run(*args: object, **kwargs: object) -> None:
+        pytest.fail("uvicorn started with a bad plugin")
+
+    monkeypatch.setenv("KAMAYOQ_DATABASE_URL", UNUSED_DATABASE_URL)
+    monkeypatch.setenv("KAMAYOQ_PLUGINS", "greeters:kind")
+    monkeypatch.setattr("kamayoq.plugins.PLUGIN_GROUPS", (GREETER_GROUP,))
+    monkeypatch.setattr("kamayoq.cli.configure_logging", lambda level: None)
+    monkeypatch.setattr("kamayoq.cli.uvicorn.run", fail_run)
+    module = install_fake_distribution(
+        tmp_path,
+        monkeypatch,
+        "fake-greeter",
+        "1.0",
+        [(GREETER_GROUP.entry_point_group, "kind", ":Kind")],
+        SYNC_GREETER,
+    )
+    assert main(["serve"]) == 4
+    assert capsys.readouterr().err == (
+        "kamayoq: Plugins are not valid:\n"
+        f"- greeters:kind: {module}:Kind does not match Greeter: greet must be async.\n"
+    )
+
+
 def test_serve_runs_uvicorn_with_settings_and_no_log_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -156,6 +200,31 @@ def test_serve_command_answers_healthz_and_logs_json() -> None:
     records = [json.loads(line) for line in stderr.splitlines()]
     loggers = {record["logger"] for record in records}
     assert {"uvicorn.error", "uvicorn.access"} <= loggers
+
+
+def test_serve_with_unknown_plugin_group_exits_four() -> None:
+    """Exit 4 from the installed command, and do not start uvicorn (AC-1)."""
+    command = Path(sysconfig.get_path("scripts")) / "kamayoq"
+    env = {
+        **os.environ,
+        "KAMAYOQ_DATABASE_URL": UNUSED_DATABASE_URL,
+        "KAMAYOQ_PORT": str(free_port()),
+        "KAMAYOQ_PLUGINS": "runtime:langgraph",
+    }
+    result = subprocess.run(
+        [str(command), "serve"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=SERVER_START_SECONDS,
+        check=False,
+    )
+    assert result.returncode == 4
+    lines = result.stderr.splitlines()
+    assert "kamayoq: Plugins are not valid:" in lines
+    assert "- runtime:langgraph: no plugin group runtime. Known groups: none." in lines
+    records = [json.loads(line) for line in lines if line.startswith("{")]
+    assert all(record["logger"] != "uvicorn.error" for record in records)
 
 
 def test_help_lists_serve_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
