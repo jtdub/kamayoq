@@ -140,6 +140,11 @@ def test_create_app_hides_the_encoded_and_decoded_database_password() -> None:
     assert redact("decoded p@ss/w") == f"decoded {MASK}"
 
 
+def secrets_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Return the captured records of the kamayoq.secrets logger."""
+    return [record for record in caplog.records if record.name == "kamayoq.secrets"]
+
+
 def test_create_app_with_no_database_password_adds_no_known_value(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -148,7 +153,7 @@ def test_create_app_with_no_database_password_adds_no_known_value(
     url = "postgresql://k@h:5/d"
     create_app(Settings(database_url=url))
     assert redact(url) == url
-    assert caplog.records == []
+    assert secrets_records(caplog) == []
 
 
 def test_create_app_warns_once_for_a_short_database_password(
@@ -157,7 +162,7 @@ def test_create_app_warns_once_for_a_short_database_password(
     """Write one warning that names the database password and shows no value."""
     caplog.set_level(logging.WARNING, logger="kamayoq.secrets")
     create_app(Settings(database_url="postgresql://k:pw@h:5/d"))
-    assert [r.getMessage() for r in caplog.records] == [
+    assert [r.getMessage() for r in secrets_records(caplog)] == [
         "the database password is shorter than 4 characters or is only white space, "
         "so log lines do not hide it"
     ]
