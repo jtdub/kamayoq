@@ -343,6 +343,7 @@ Limits:
 
 `KAMAYOQ_OIDC_ROLE_MAP` gives kamayoq roles to the members of IdP groups. The roles are `admin`, `agent-author`, `tool-granter`, `approver`, `auditor`, and `viewer`.
 A user gets each role of each group of the token that the map names. A user with no mapped group gets no role. `/v1/me` shows the roles.
+No route checks the roles in this release. Issue [#52](https://github.com/jtdub/kamayoq/issues/52) adds the permission checks.
 
 In the environment, give a JSON object:
 
