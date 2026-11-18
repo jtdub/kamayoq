@@ -1,0 +1,40 @@
+{
+  "realm": "kamayoq-other",
+  "enabled": true,
+  "attributes": {
+    "kamayoqNote": "Realm of the kamayoq test suite. The user passwords are for tests only. Do not use this realm in production."
+  },
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.test",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Test",
+      "credentials": [
+        { "type": "password", "value": "alice-test-only-password", "temporary": false }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "kamayoq-cli",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "attributes": { "oauth2.device.authorization.grant.enabled": "true" },
+      "protocolMappers": [
+        {
+          "name": "kamayoq-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "kamayoq-api",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}
