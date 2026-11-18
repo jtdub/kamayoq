@@ -24,6 +24,8 @@ CLI_CLIENT = "kamayoq-cli"
 OTHER_CLIENT = "kamayoq-other"
 API_AUDIENCE = "kamayoq-api"
 ALICE_PASSWORD = "alice-test-only-password"
+BOB_PASSWORD = "bob-test-only-password"
+ADMIN_ROLE_MAP = '{"/kamayoq-admins": ["admin"]}'
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 
 
@@ -33,16 +35,20 @@ def realm_url(keycloak: str, realm: str = TEST_REALM) -> str:
 
 
 def password_token(
-    keycloak: str, realm: str = TEST_REALM, client_id: str = CLI_CLIENT
+    keycloak: str,
+    realm: str = TEST_REALM,
+    client_id: str = CLI_CLIENT,
+    username: str = "alice",
+    password: str = ALICE_PASSWORD,
 ) -> str:
-    """Return an access token of alice from the password grant."""
+    """Return an access token of the user from the password grant."""
     response = httpx2.post(
         f"{realm_url(keycloak, realm)}/protocol/openid-connect/token",
         data={
             "grant_type": "password",
             "client_id": client_id,
-            "username": "alice",
-            "password": ALICE_PASSWORD,
+            "username": username,
+            "password": password,
         },
     )
     response.raise_for_status()
@@ -65,11 +71,15 @@ def b64url_json(segment: str) -> dict[str, object]:
 
 @pytest.fixture
 def client(keycloak: str) -> Iterator[TestClient]:
-    """Return a started test client of an app that trusts the kamayoq-test realm."""
+    """Return a started client of an app that trusts the kamayoq-test realm.
+
+    The app gives admin to the members of /kamayoq-admins.
+    """
     settings = Settings(
         database_url=DATABASE_URL,
         oidc_issuer=realm_url(keycloak),
         oidc_audience=API_AUDIENCE,
+        oidc_role_map=ADMIN_ROLE_MAP,
     )
     with TestClient(create_app(settings)) as started:
         yield started
@@ -101,6 +111,20 @@ def test_keycloak_token_gives_subject_and_groups(
     assert body["subject"] == b64url_json(alice_token.split(".")[1])["sub"]
     assert body["issuer"] == realm_url(keycloak)
     assert body["groups"] == ["/kamayoq-admins"]
+
+
+@pytest.mark.parametrize(
+    ("username", "password", "roles"),
+    [("alice", ALICE_PASSWORD, ["admin"]), ("bob", BOB_PASSWORD, [])],
+)
+def test_role_map_gives_admin_to_the_admin_group_only(
+    client: TestClient, keycloak: str, username: str, password: str, roles: list[str]
+) -> None:
+    """Give admin to alice of /kamayoq-admins, and no role to bob (AC-4)."""
+    token = password_token(keycloak, username=username, password=password)
+    response = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["roles"] == roles
 
 
 def test_token_of_other_client_has_wrong_audience(
@@ -184,6 +208,7 @@ def test_expired_keycloak_token_is_refused(alice_token: str, keycloak: str) -> N
                 issuer,
                 API_AUDIENCE,
                 "groups",
+                {},
                 now=lambda: time.time() + 3600,
             )
             await verifier.verify(alice_token)

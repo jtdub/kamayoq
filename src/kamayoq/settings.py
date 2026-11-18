@@ -4,12 +4,13 @@ import os
 import re
 import tomllib
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 
 from pydantic import (
     Field,
     PostgresDsn,
+    TypeAdapter,
     ValidationError,
     ValidationInfo,
     field_validator,
@@ -23,12 +24,19 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from kamayoq.roles import Role, RoleMap
+
 ENV_PREFIX = "KAMAYOQ_"
 CONFIG_FILE_ENV = "KAMAYOQ_CONFIG_FILE"
 LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
 PLUGIN_REFERENCE = re.compile(r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._-]*")
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+ROLE_MAP_ADAPTER: TypeAdapter[RoleMap] = TypeAdapter(RoleMap)
+ROLE_MAP_ERROR = (
+    "must be a JSON object of group to list of roles. "
+    f"The roles are {', '.join(get_args(Role))}."
+)
 
 
 class InvalidSettingsError(Exception):
@@ -104,6 +112,7 @@ class Settings(BaseSettings):
     oidc_issuer: str | None = None
     oidc_audience: str | None = Field(default=None, min_length=1, validate_default=True)
     oidc_groups_claim: str = Field(default="groups", min_length=1)
+    oidc_role_map: Annotated[RoleMap, NoDecode] = {}
     secrets_backend: Literal["env", "file"] = "env"
     secrets_dir: Path = Field(default=Path("/run/secrets"), validate_default=True)
 
@@ -172,6 +181,28 @@ class Settings(BaseSettings):
                 f"set both {ENV_PREFIX}OIDC_ISSUER and {ENV_PREFIX}OIDC_AUDIENCE, "
                 "or neither"
             )
+        return value
+
+    @field_validator("oidc_role_map", mode="before")
+    @classmethod
+    def parse_role_map(cls, value: object) -> RoleMap:
+        """Return the role map from a JSON text or a TOML table.
+
+        Each error gives one message on the field, with no input text.
+        """
+        try:
+            if isinstance(value, str):
+                return ROLE_MAP_ADAPTER.validate_json(value)
+            return ROLE_MAP_ADAPTER.validate_python(value)
+        except ValueError:
+            raise ValueError(ROLE_MAP_ERROR) from None
+
+    @field_validator("oidc_role_map", mode="after")
+    @classmethod
+    def reject_empty_group(cls, value: RoleMap) -> RoleMap:
+        """Reject an empty group name."""
+        if "" in value:
+            raise ValueError("a group name must not be empty")
         return value
 
     @field_validator("secrets_dir", mode="before")

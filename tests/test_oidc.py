@@ -32,6 +32,7 @@ from kamayoq.oidc import (
     Principal,
     discovery_url,
 )
+from kamayoq.roles import RoleMap
 
 SECRET_BODY_TEXT = "body-text-that-must-not-leak"
 
@@ -263,6 +264,7 @@ def run_verifier[T](
     clock: FakeClock | None = None,
     now: Callable[[], float] = time.time,
     groups_claim: str = "groups",
+    role_map: RoleMap | None = None,
 ) -> T:
     """Run the scenario on one event loop with an OidcVerifier of the fake IdP."""
 
@@ -270,7 +272,7 @@ def run_verifier[T](
         async with idp.client() as client:
             keys = OidcKeys(FAKE_ISSUER, client, clock=clock or FakeClock())
             verifier = OidcVerifier(
-                keys, FAKE_ISSUER, FAKE_AUDIENCE, groups_claim, now=now
+                keys, FAKE_ISSUER, FAKE_AUDIENCE, groups_claim, role_map or {}, now=now
             )
             return await scenario(verifier)
 
@@ -282,10 +284,15 @@ def verify_token(
     token: str,
     now: Callable[[], float] = time.time,
     groups_claim: str = "groups",
+    role_map: RoleMap | None = None,
 ) -> Principal:
     """Return the principal of one token, checked by a new verifier."""
     return run_verifier(
-        idp, lambda verifier: verifier.verify(token), now=now, groups_claim=groups_claim
+        idp,
+        lambda verifier: verifier.verify(token),
+        now=now,
+        groups_claim=groups_claim,
+        role_map=role_map,
     )
 
 
@@ -317,6 +324,24 @@ def test_a_good_rs256_token_gives_the_subject_the_issuer_and_the_groups() -> Non
         issuer=FAKE_ISSUER,
         groups=frozenset({"admins", "operators"}),
     )
+
+
+def test_a_verifier_with_no_role_map_gives_no_roles() -> None:
+    """Give no roles when the verifier has no role map (AC-4)."""
+    idp = FakeIdp()
+    assert verify_token(idp, idp.token()).roles == frozenset()
+
+
+def test_the_role_map_gives_the_roles_of_the_token_groups() -> None:
+    """Give the union of the roles of each mapped group of the token (AC-4, E15)."""
+    idp = FakeIdp()
+    role_map: RoleMap = {
+        "admins": frozenset({"admin", "viewer"}),
+        "operators": frozenset({"viewer"}),
+        "others": frozenset({"auditor"}),
+    }
+    principal = verify_token(idp, idp.token(), role_map=role_map)
+    assert principal.roles == {"admin", "viewer"}
 
 
 @pytest.mark.parametrize("alg", ["RS384", "PS256", "ES256", "ES384"])

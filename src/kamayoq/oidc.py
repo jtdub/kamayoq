@@ -14,6 +14,7 @@ from joserfc.errors import ClaimError, InvalidKeyIdError, JoseError
 from joserfc.jwk import KeySet
 from joserfc.jws import extract_compact
 
+from kamayoq.roles import Role, RoleMap, roles_for_groups
 from kamayoq.settings import require_secure_url
 
 CLOCK_LEEWAY_SECONDS = 60
@@ -57,6 +58,7 @@ class Principal:
     subject: str
     issuer: str
     groups: frozenset[str]
+    roles: frozenset[Role] = frozenset()
 
 
 class _IssuerMismatchError(IdentityProviderError):
@@ -233,11 +235,13 @@ class OidcVerifier:
         issuer: str,
         audience: str,
         groups_claim: str,
+        role_map: RoleMap,
         now: Callable[[], float] = time.time,
     ) -> None:
-        """Keep the key cache, the expected claims, and the wall clock."""
+        """Keep the key cache, the expected claims, the role map, and the wall clock."""
         self._keys = keys
         self._groups_claim = groups_claim
+        self._role_map = role_map
         self._claims_registry = jwt.JWTClaimsRegistry(
             now=lambda: int(now()),
             leeway=CLOCK_LEEWAY_SECONDS,
@@ -250,7 +254,8 @@ class OidcVerifier:
     async def verify(self, token: str) -> Principal:
         """Return the principal of a valid token.
 
-        A groups claim that is not a list of strings gives no groups.
+        A groups claim that is not a list of strings gives no groups. The roles
+        are the roles of each group in the role map.
 
         Raises:
             InvalidTokenError: If the token is not valid.
@@ -269,10 +274,12 @@ class OidcVerifier:
             ) from None
         except JoseError as error:
             raise InvalidTokenError(error.error) from None
+        groups = _string_set(claims.get(self._groups_claim))
         return Principal(
             subject=claims["sub"],
             issuer=claims["iss"],
-            groups=_string_set(claims.get(self._groups_claim)),
+            groups=groups,
+            roles=roles_for_groups(groups, self._role_map),
         )
 
     async def _decode(self, token: str) -> dict[str, Any]:
