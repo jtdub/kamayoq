@@ -1,0 +1,1 @@
+Added a check of the signature, the issuer, the audience, and the expiry of OIDC tokens. The API sign-in of a later release uses it.
