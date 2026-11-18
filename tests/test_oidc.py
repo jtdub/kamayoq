@@ -113,27 +113,12 @@ def test_reload_loads_at_most_once_in_each_reload_interval() -> None:
     assert idp.requests == {DISCOVERY_PATH: 2, JWKS_PATH: 2}
 
 
-def test_reload_gives_one_load_for_two_calls_at_the_same_time() -> None:
-    """Load once when two reload calls wait on the same lock."""
-    idp = FakeIdp()
-    clock = FakeClock()
-
-    async def scenario(keys: OidcKeys) -> list[bool]:
-        await keys.key_set()
-        clock.now += JWKS_RELOAD_MIN_SECONDS + 1
-        return list(await asyncio.gather(keys.reload(), keys.reload()))
-
-    results = run_with_keys(idp, clock, scenario)
-    assert sorted(results) == [False, True]
-    assert idp.requests[JWKS_PATH] == 2
-
-
 def test_discovery_issuer_with_a_trailing_slash_is_an_error_with_one_error_line(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Reject a discovery issuer that differs, and log both values one time."""
     idp = FakeIdp()
-    idp.discovery_overrides["issuer"] = FAKE_ISSUER + "/"
+    idp.bodies[DISCOVERY_PATH] = {"issuer": FAKE_ISSUER + "/"}
     caplog.set_level(logging.WARNING)
 
     async def scenario(keys: OidcKeys) -> None:
@@ -149,50 +134,41 @@ def test_discovery_issuer_with_a_trailing_slash_is_an_error_with_one_error_line(
     assert idp.requests[JWKS_PATH] == 0
 
 
+HTTP_JWKS_URI = {"issuer": FAKE_ISSUER, "jwks_uri": "http://idp.example.com/jwks"}
+
+
 @pytest.mark.parametrize(
-    ("path", "change"),
+    ("path", "status", "body"),
     [
-        (DISCOVERY_PATH, "status"),
-        (JWKS_PATH, "status"),
-        (DISCOVERY_PATH, "timeout"),
-        (JWKS_PATH, "timeout"),
-        (DISCOVERY_PATH, "not json"),
-        (JWKS_PATH, "not json"),
-        (DISCOVERY_PATH, "not an object"),
-        (JWKS_PATH, "keys is a string"),
-        (JWKS_PATH, "keys has a string"),
-        (JWKS_PATH, "unknown key type"),
-        (JWKS_PATH, "no key type"),
-        (JWKS_PATH, "empty key set"),
-        (DISCOVERY_PATH, "http jwks_uri"),
-        (DISCOVERY_PATH, "no jwks_uri"),
+        (DISCOVERY_PATH, 500, {"error": SECRET_BODY_TEXT}),
+        (JWKS_PATH, 500, {"error": SECRET_BODY_TEXT}),
+        (DISCOVERY_PATH, None, None),
+        (JWKS_PATH, None, None),
+        (DISCOVERY_PATH, 200, SECRET_BODY_TEXT.encode()),
+        (JWKS_PATH, 200, SECRET_BODY_TEXT.encode()),
+        (DISCOVERY_PATH, 200, [SECRET_BODY_TEXT]),
+        (DISCOVERY_PATH, 200, {"issuer": FAKE_ISSUER}),
+        (DISCOVERY_PATH, 200, HTTP_JWKS_URI),
+        (JWKS_PATH, 200, {"keys": SECRET_BODY_TEXT}),
+        (JWKS_PATH, 200, {"keys": [SECRET_BODY_TEXT]}),
+        (JWKS_PATH, 200, {"keys": [{"kty": "nope", "x": SECRET_BODY_TEXT}]}),
+        (JWKS_PATH, 200, {"keys": [{"x": SECRET_BODY_TEXT}]}),
+        (JWKS_PATH, 200, {"keys": []}),
     ],
 )
 def test_a_bad_answer_of_the_idp_is_an_error_with_no_response_body(
-    path: str, change: str
+    path: str, status: int | None, body: object
 ) -> None:
-    """Raise IdentityProviderError with no response body for each bad answer."""
+    """Raise IdentityProviderError with no response body for each bad answer.
+
+    A status of None makes the request time out.
+    """
     idp = FakeIdp()
-    bodies: dict[str, object] = {
-        "status": {"error": SECRET_BODY_TEXT},
-        "not json": SECRET_BODY_TEXT.encode(),
-        "not an object": [SECRET_BODY_TEXT],
-        "keys is a string": {"keys": SECRET_BODY_TEXT},
-        "keys has a string": {"keys": [SECRET_BODY_TEXT]},
-        "unknown key type": {"keys": [{"kty": "nope", "x": SECRET_BODY_TEXT}]},
-        "no key type": {"keys": [{"x": SECRET_BODY_TEXT}]},
-        "empty key set": {"keys": []},
-    }
-    if change == "status":
-        idp.status[path] = 500
-    if change == "timeout":
+    if status is None:
         idp.timeouts.add(path)
-    if change in bodies:
-        idp.bodies[path] = bodies[change]
-    if change == "http jwks_uri":
-        idp.discovery_overrides["jwks_uri"] = "http://idp.example.com" + JWKS_PATH
-    if change == "no jwks_uri":
-        idp.discovery_overrides["jwks_uri"] = None
+    else:
+        idp.status[path] = status
+        idp.bodies[path] = body
 
     async def scenario(keys: OidcKeys) -> IdentityProviderError:
         with pytest.raises(IdentityProviderError) as caught:

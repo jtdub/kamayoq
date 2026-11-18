@@ -25,7 +25,6 @@ class FakeIdp:
         self.rsa_key = RSAKey.generate_key(2048, parameters={"kid": "rsa-1"})
         self.ec_key = ECKey.generate_key("P-256", parameters={"kid": "ec-1"})
         self.requests: Counter[str] = Counter()
-        self.discovery_overrides: dict[str, object] = {}
         self.status: dict[str, int] = {}
         self.timeouts: set[str] = set()
         self.bodies: dict[str, object] = {}
@@ -41,13 +40,11 @@ class FakeIdp:
         return dict(key_set.as_dict(private=False))
 
     def discovery(self) -> dict[str, object]:
-        """Return the discovery document with the overrides applied."""
-        document: dict[str, object] = {
+        """Return the discovery document."""
+        return {
             "issuer": self.issuer,
             "jwks_uri": "https://idp.example.com" + JWKS_PATH,
         }
-        document.update(self.discovery_overrides)
-        return document
 
     async def handle(self, request: httpx2.Request) -> httpx2.Response:
         """Return the answer for the path of the request.
