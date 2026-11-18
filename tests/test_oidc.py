@@ -415,20 +415,35 @@ def test_an_unknown_kid_reloads_the_key_set_at_most_once_in_60_seconds() -> None
         principal = await verifier.verify(idp.token(key=new_key))
         assert principal.subject == "user-1"
         assert idp.requests[JWKS_PATH] == 2
-        with pytest.raises(InvalidTokenError):
-            await verifier.verify(idp.token(kid="rsa-3"))
+        unknown_kid_token = idp.token(kid="rsa-3")
+        with pytest.raises(InvalidTokenError) as caught:
+            await verifier.verify(unknown_kid_token)
+        assert_no_token_text(unknown_kid_token, str(caught.value))
         assert idp.requests[JWKS_PATH] == 2
 
     run_verifier(idp, scenario, clock=clock)
 
 
 def test_a_token_with_no_kid_and_two_keys_is_rejected_with_no_reload(
-    rejected: Rejected,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Reject a token with no kid at once, because a reload cannot help (E6a)."""
+    """Reject a token with no kid, also when a reload is permitted (E6a)."""
     idp = FakeIdp()
-    rejected(idp, idp.token(omit_kid=True))
+    clock = FakeClock()
+    token = idp.token(omit_kid=True)
+    caplog.set_level(logging.DEBUG)
+
+    async def scenario(verifier: OidcVerifier) -> InvalidTokenError:
+        await verifier.verify(idp.token())
+        clock.now += JWKS_RELOAD_MIN_SECONDS + 1
+        with pytest.raises(InvalidTokenError) as caught:
+            await verifier.verify(token)
+        return caught.value
+
+    error = run_verifier(idp, scenario, clock=clock)
     assert idp.requests[JWKS_PATH] == 1
+    assert "no kid" in str(error)
+    assert_no_token_text(token, str(error), caplog.text)
 
 
 @pytest.mark.parametrize(
@@ -455,4 +470,14 @@ def test_a_token_larger_than_16_kib_is_rejected_before_any_request(
     """Reject a large token before a request to the IdP (E11)."""
     idp = FakeIdp()
     rejected(idp, "a" * (MAX_TOKEN_BYTES + 1))
+    assert not idp.requests
+
+
+@pytest.mark.parametrize("token", ["\udc80", "é.é.é"])
+def test_a_token_that_is_not_ascii_is_rejected_before_any_request(
+    token: str, rejected: Rejected
+) -> None:
+    """Reject a token with a character that a compact JWT cannot hold."""
+    idp = FakeIdp()
+    rejected(idp, token)
     assert not idp.requests

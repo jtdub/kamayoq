@@ -256,7 +256,9 @@ class OidcVerifier:
             InvalidTokenError: If the token is not valid.
             IdentityProviderError: If no key set is available.
         """
-        if len(token.encode()) > MAX_TOKEN_BYTES:
+        if not token.isascii():
+            raise InvalidTokenError("the token has a character that is not ASCII")
+        if len(token) > MAX_TOKEN_BYTES:
             raise InvalidTokenError(f"the token is larger than {MAX_TOKEN_BYTES} bytes")
         try:
             claims = await self._decode(token)
