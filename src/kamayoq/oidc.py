@@ -1,14 +1,18 @@
-"""Discovery and signing keys of the OIDC identity provider."""
+"""Discovery, signing keys, and bearer token check of the OIDC identity provider."""
 
 import asyncio
 import logging
 import math
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 import httpx2
-from joserfc.errors import JoseError
+from joserfc import jwt
+from joserfc.errors import ClaimError, InvalidKeyIdError, JoseError
 from joserfc.jwk import KeySet
+from joserfc.jws import extract_compact
 
 from kamayoq.settings import require_secure_url
 
@@ -24,6 +28,10 @@ FAILURE_BACKOFF_SECONDS = 30
 """Time after a failed load in which no new request goes to the IdP."""
 HTTP_TIMEOUT_SECONDS = 5.0
 """Time limit of one request to the IdP."""
+ALLOWED_ALGORITHMS = ("RS256", "RS384", "RS512", "PS256", "ES256", "ES384")
+"""Signature algorithms that a token can use."""
+MAX_TOKEN_BYTES = 16 * 1024
+"""Largest token that the check decodes."""
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,22 @@ class IdentityProviderError(Exception):
 
     The message names the URL and the reason. It has no response body.
     """
+
+
+class InvalidTokenError(Exception):
+    """Raise when a bearer token is not valid.
+
+    The message names the reason and the claim. It has no token text.
+    """
+
+
+@dataclass(frozen=True)
+class Principal:
+    """The identity that a valid token gives."""
+
+    subject: str
+    issuer: str
+    groups: frozenset[str]
 
 
 class _IssuerMismatchError(IdentityProviderError):
@@ -191,3 +215,81 @@ class OidcKeys:
             raise IdentityProviderError(
                 f"{jwks_uri} has a key set that cannot load: {type(error).__name__}"
             ) from error
+
+
+def _string_set(value: object) -> frozenset[str]:
+    """Return a list of strings as a set, and each other value as an empty set."""
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return frozenset(value)
+    return frozenset()
+
+
+class OidcVerifier:
+    """Check the signature and the claims of a bearer token of one issuer."""
+
+    def __init__(
+        self,
+        keys: OidcKeys,
+        issuer: str,
+        audience: str,
+        groups_claim: str,
+        now: Callable[[], float] = time.time,
+    ) -> None:
+        """Keep the key cache, the expected claims, and the wall clock."""
+        self._keys = keys
+        self._groups_claim = groups_claim
+        self._claims_registry = jwt.JWTClaimsRegistry(
+            now=lambda: int(now()),
+            leeway=CLOCK_LEEWAY_SECONDS,
+            iss={"essential": True, "value": issuer},
+            aud={"essential": True, "value": audience},
+            exp={"essential": True},
+            sub={"essential": True},
+        )
+
+    async def verify(self, token: str) -> Principal:
+        """Return the principal of a valid token.
+
+        A groups claim that is not a list of strings gives no groups.
+
+        Raises:
+            InvalidTokenError: If the token is not valid.
+            IdentityProviderError: If no key set is available.
+        """
+        if len(token.encode()) > MAX_TOKEN_BYTES:
+            raise InvalidTokenError(f"the token is larger than {MAX_TOKEN_BYTES} bytes")
+        try:
+            claims = await self._decode(token)
+            self._claims_registry.validate(claims)
+        except ClaimError as error:
+            raise InvalidTokenError(
+                f"{error.error} in the claim {error.claim}"
+            ) from None
+        except JoseError as error:
+            raise InvalidTokenError(error.error) from None
+        return Principal(
+            subject=claims["sub"],
+            issuer=claims["iss"],
+            groups=_string_set(claims.get(self._groups_claim)),
+        )
+
+    async def _decode(self, token: str) -> dict[str, Any]:
+        """Return the claims of a token with a valid signature.
+
+        An unknown key ID reloads the key set one time, within the reload limit.
+        """
+        try:
+            return self._decode_with(token, await self._keys.key_set())
+        except InvalidKeyIdError:
+            if not extract_compact(token.encode()).headers().get("kid"):
+                raise InvalidTokenError(
+                    "the token has no kid, and the key set has more than one key"
+                ) from None
+            if not await self._keys.reload():
+                raise
+        return self._decode_with(token, await self._keys.key_set())
+
+    @staticmethod
+    def _decode_with(token: str, key_set: KeySet) -> dict[str, Any]:
+        """Return the claims of the token, signed by a key of the key set."""
+        return jwt.decode(token, key_set, algorithms=ALLOWED_ALGORITHMS).claims
