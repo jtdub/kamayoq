@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
+import httpx2
 import pytest
 from fake_idp import DISCOVERY_PATH, FAKE_ISSUER, JWKS_PATH, FakeIdp
 from joserfc.jwk import KeySet
@@ -93,7 +94,7 @@ def test_key_set_loads_again_after_the_max_age() -> None:
 
 
 def test_reload_loads_at_most_once_in_each_reload_interval() -> None:
-    """Refuse a reload within 60 s of the last load, and load after 61 s."""
+    """Refuse a reload within 60 s, load after 61 s, and answer waiters True."""
     idp = FakeIdp()
     clock = FakeClock()
     results: list[bool] = []
@@ -107,10 +108,12 @@ def test_reload_loads_at_most_once_in_each_reload_interval() -> None:
         results.append(await keys.reload())
         clock.now += 1
         results.append(await keys.reload())
+        clock.now += JWKS_RELOAD_MIN_SECONDS + 1
+        results.extend(await asyncio.gather(keys.reload(), keys.reload()))
 
     run_with_keys(idp, clock, scenario)
-    assert results == [False, True, False]
-    assert idp.requests == {DISCOVERY_PATH: 2, JWKS_PATH: 2}
+    assert results == [False, True, False, True, True]
+    assert idp.requests == {DISCOVERY_PATH: 3, JWKS_PATH: 3}
 
 
 def test_discovery_issuer_with_a_trailing_slash_is_an_error_with_one_error_line(
@@ -134,7 +137,10 @@ def test_discovery_issuer_with_a_trailing_slash_is_an_error_with_one_error_line(
     assert idp.requests[JWKS_PATH] == 0
 
 
-HTTP_JWKS_URI = {"issuer": FAKE_ISSUER, "jwks_uri": "http://idp.example.com/jwks"}
+HTTP_JWKS_URI = {
+    "issuer": FAKE_ISSUER,
+    "jwks_uri": "http://idp.example.com" + JWKS_PATH,
+}
 
 
 @pytest.mark.parametrize(
@@ -142,13 +148,16 @@ HTTP_JWKS_URI = {"issuer": FAKE_ISSUER, "jwks_uri": "http://idp.example.com/jwks
     [
         (DISCOVERY_PATH, 500, {"error": SECRET_BODY_TEXT}),
         (JWKS_PATH, 500, {"error": SECRET_BODY_TEXT}),
-        (DISCOVERY_PATH, None, None),
-        (JWKS_PATH, None, None),
+        (DISCOVERY_PATH, httpx2.ReadTimeout, None),
+        (JWKS_PATH, httpx2.ReadTimeout, None),
+        (DISCOVERY_PATH, httpx2.DecodingError, None),
+        (JWKS_PATH, httpx2.DecodingError, None),
         (DISCOVERY_PATH, 200, SECRET_BODY_TEXT.encode()),
         (JWKS_PATH, 200, SECRET_BODY_TEXT.encode()),
         (DISCOVERY_PATH, 200, [SECRET_BODY_TEXT]),
         (DISCOVERY_PATH, 200, {"issuer": FAKE_ISSUER}),
         (DISCOVERY_PATH, 200, HTTP_JWKS_URI),
+        (DISCOVERY_PATH, 200, {"issuer": "x" * 10000}),
         (JWKS_PATH, 200, {"keys": SECRET_BODY_TEXT}),
         (JWKS_PATH, 200, {"keys": [SECRET_BODY_TEXT]}),
         (JWKS_PATH, 200, {"keys": [{"kty": "nope", "x": SECRET_BODY_TEXT}]}),
@@ -157,15 +166,15 @@ HTTP_JWKS_URI = {"issuer": FAKE_ISSUER, "jwks_uri": "http://idp.example.com/jwks
     ],
 )
 def test_a_bad_answer_of_the_idp_is_an_error_with_no_response_body(
-    path: str, status: int | None, body: object
+    path: str, status: int | type[httpx2.RequestError], body: object
 ) -> None:
     """Raise IdentityProviderError with no response body for each bad answer.
 
-    A status of None makes the request time out.
+    A status that is an httpx2 error class makes the request raise it.
     """
     idp = FakeIdp()
-    if status is None:
-        idp.timeouts.add(path)
+    if not isinstance(status, int):
+        idp.errors[path] = status
     else:
         idp.status[path] = status
         idp.bodies[path] = body
@@ -177,6 +186,7 @@ def test_a_bad_answer_of_the_idp_is_an_error_with_no_response_body(
 
     error = run_with_keys(idp, FakeClock(), scenario)
     assert SECRET_BODY_TEXT not in str(error)
+    assert len(str(error)) < 500
 
 
 def test_discovery_url_has_one_slash_before_well_known() -> None:

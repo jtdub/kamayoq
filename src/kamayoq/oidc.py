@@ -53,7 +53,7 @@ async def _get_json_object(client: httpx2.AsyncClient, url: str) -> dict[str, ob
     """
     try:
         response = await client.get(url, timeout=HTTP_TIMEOUT_SECONDS)
-    except httpx2.TransportError as error:
+    except httpx2.RequestError as error:
         raise IdentityProviderError(
             f"{url} did not answer: {type(error).__name__}"
         ) from error
@@ -116,10 +116,14 @@ class OidcKeys:
         """Load the key set again for an unknown key ID.
 
         Returns:
-            True if a new key set loaded. False if the last load is younger than
-            the reload limit, the backoff is active, or the load failed.
+            True if a new key set loaded after the call started. False if the
+            last load is younger than the reload limit, the backoff is active, or
+            the load failed.
         """
+        loaded_at_start = self._loaded_at
         async with self._lock:
+            if self._loaded_at != loaded_at_start:
+                return True
             if self._clock() - self._loaded_at < JWKS_RELOAD_MIN_SECONDS:
                 return False
             if self._backoff_is_active():
@@ -167,7 +171,7 @@ class OidcKeys:
         discovery = await _get_json_object(self._client, url)
         if discovery.get("issuer") != self._issuer:
             raise _IssuerMismatchError(
-                f"{url} names the issuer {discovery.get('issuer')!r}, "
+                f"{url} names the issuer {discovery.get('issuer')!r:.200}, "
                 f"but KAMAYOQ_OIDC_ISSUER is {self._issuer!r}"
             )
         jwks_uri = discovery.get("jwks_uri")

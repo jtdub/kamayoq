@@ -26,7 +26,7 @@ class FakeIdp:
         self.ec_key = ECKey.generate_key("P-256", parameters={"kid": "ec-1"})
         self.requests: Counter[str] = Counter()
         self.status: dict[str, int] = {}
-        self.timeouts: set[str] = set()
+        self.errors: dict[str, type[httpx2.RequestError]] = {}
         self.bodies: dict[str, object] = {}
         self.transport = httpx2.MockTransport(self.handle)
 
@@ -50,13 +50,13 @@ class FakeIdp:
         """Return the answer for the path of the request.
 
         Raises:
-            httpx2.ReadTimeout: If the path is in timeouts.
+            httpx2.RequestError: The error that errors names for the path.
         """
         await asyncio.sleep(0)
         path = request.url.path
         self.requests[path] += 1
-        if path in self.timeouts:
-            raise httpx2.ReadTimeout("fake timeout", request=request)
+        if path in self.errors:
+            raise self.errors[path]("fake error", request=request)
         default_bodies: dict[str, object] = {
             DISCOVERY_PATH: self.discovery(),
             JWKS_PATH: self.jwks(),
