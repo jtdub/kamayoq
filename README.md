@@ -310,19 +310,33 @@ To set up Keycloak:
 4. Add a "Group Membership" mapper to the same scope. Set "Token Claim Name" to `groups`, and turn on "Add to access token".
 5. Set `KAMAYOQ_OIDC_ISSUER=https://<keycloak host>/realms/kamayoq` and `KAMAYOQ_OIDC_AUDIENCE=kamayoq-api`.
 
+The `kamayoq login` command comes in a later release. To test the setup now, get a token with the password grant of a test client:
+
+1. Turn on "Direct access grants" on the client. Use a test client only, because this grant sends the user password to the client.
+2. Get a token for a test user, and call `/v1/me` with it:
+
+```bash
+TOKEN=$(curl -s -d grant_type=password -d client_id=kamayoq-cli \
+  -d username=<user> -d password=<password> \
+  https://<keycloak host>/realms/kamayoq/protocol/openid-connect/token | jq -r .access_token)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/v1/me
+```
+
 Use these values for each provider. Issue [#93](https://github.com/jtdub/kamayoq/issues/93) has the full Entra ID and Okta steps.
 
 | Provider | `KAMAYOQ_OIDC_ISSUER` | `KAMAYOQ_OIDC_AUDIENCE` | `KAMAYOQ_OIDC_GROUPS_CLAIM` | CLI scopes |
 |---|---|---|---|---|
 | Keycloak | `https://<host>/realms/<realm>` | The value of the audience mapper | `groups`, with the full group path, for example `/kamayoq-admins` | `openid offline_access` |
-| Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0`. `<tenant-id>` is the directory (tenant) ID, a GUID. Do not use a domain name. | The application ID of the API app. Set `accessTokenAcceptedVersion: 2` in its manifest. | `groups`. The values are group object IDs. Add the groups claim in Token configuration of the API app first. | `openid offline_access api://<app-id>/<scope>` |
+| Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0`. `<tenant-id>` is the directory (tenant) ID, a GUID. Do not use a domain name. | The application ID of the API app. Set `api.requestedAccessTokenVersion: 2` in its manifest (`accessTokenAcceptedVersion` in the old manifest). | `groups`. The values are group object IDs. Add the groups claim in Token configuration of the API app first. | `openid offline_access api://<app-id>/<scope>` |
 | Okta | `https://<org>.okta.com/oauth2/<server-id>`, from a custom authorization server | The audience of the authorization server | The groups claim that you add to the authorization server | `openid offline_access` |
 
 Limits:
 
 - A revoked token stays valid until it expires. kamayoq does not ask the provider about each token.
 - Each server process loads and keeps its own copy of the provider keys.
-- `/readyz` stays 200 while the provider is down. Only the `/v1` routes return 503.
+- kamayoq keeps the loaded keys for up to 24 hours while the provider is down. During that time, the `/v1` routes still accept valid tokens.
+- The `/v1` routes return 503 only when kamayoq has no keys, for example after 24 hours, or after a restart during the outage. `/readyz` stays 200.
+- WARNING: A restart of kamayoq while the provider is down deletes the loaded keys, and each `/v1` route then returns 503. Do not restart kamayoq until the provider is up again.
 
 ### Endpoints
 
