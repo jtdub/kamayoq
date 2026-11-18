@@ -123,6 +123,19 @@ def test_token_of_other_realm_has_wrong_issuer(
     assert_refused(client, token, caplog, "invalid_key_id")
 
 
+def test_token_from_other_host_name_has_wrong_issuer(
+    client: TestClient, keycloak: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Refuse a token of the same realm with another issuer host (AC-2, AC-5).
+
+    Keycloak writes the request host into iss, so the signing keys are the same.
+    """
+    other_host = keycloak.replace("localhost", "127.0.0.1")
+    token = password_token(other_host)
+    assert b64url_json(token.split(".")[1])["iss"] == realm_url(other_host)
+    assert_refused(client, token, caplog, "in the claim iss")
+
+
 def test_changed_signature_is_refused(
     client: TestClient, alice_token: str, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -175,7 +188,7 @@ def test_expired_keycloak_token_is_refused(alice_token: str, keycloak: str) -> N
             )
             await verifier.verify(alice_token)
 
-    with pytest.raises(InvalidTokenError, match="exp"):
+    with pytest.raises(InvalidTokenError, match="in the claim exp"):
         asyncio.run(verify_one_hour_later())
 
 

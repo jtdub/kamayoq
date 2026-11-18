@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import is_loopback_host
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POSTGRES_TESTS = "tests/test_postgres.py"
@@ -42,7 +43,7 @@ def collected_ids(result: subprocess.CompletedProcess[str]) -> list[str]:
     return [line for line in result.stdout.splitlines() if "::" in line]
 
 
-def test_integration_marker_selects_only_postgres_tests(tmp_path: Path) -> None:
+def test_integration_marker_selects_only_container_tests(tmp_path: Path) -> None:
     """Select the tests that use the postgres or the keycloak fixture."""
     result = run_pytest(
         tmp_path, "--collect-only", "-q", "--no-cov", "-m", "integration"
@@ -163,3 +164,18 @@ def test_child_run_writes_coverage_data_outside_the_repository(tmp_path: Path) -
     result = run_pytest(tmp_path, "tests/test_cli.py")
     assert result.returncode == 0
     assert (tmp_path / ".coverage").is_file()
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("localhost", True),
+        ("127.0.0.1", True),
+        ("::1", True),
+        ("192.168.65.254", False),
+        ("host.docker.internal", False),
+    ],
+)
+def test_is_loopback_host(host: str, expected: bool) -> None:
+    """Accept only localhost and loopback IP addresses as the Docker host."""
+    assert is_loopback_host(host) is expected
