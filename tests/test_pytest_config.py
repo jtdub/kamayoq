@@ -14,6 +14,7 @@ INTEGRATION_TEST_FILES = (
     "tests/test_readyz_postgres.py",
     "tests/test_db_postgres.py",
     "tests/test_migrations.py",
+    "tests/test_keycloak.py",
 )
 
 
@@ -42,7 +43,7 @@ def collected_ids(result: subprocess.CompletedProcess[str]) -> list[str]:
 
 
 def test_integration_marker_selects_only_postgres_tests(tmp_path: Path) -> None:
-    """Select the tests that use the postgres fixture."""
+    """Select the tests that use the postgres or the keycloak fixture."""
     result = run_pytest(
         tmp_path, "--collect-only", "-q", "--no-cov", "-m", "integration"
     )
@@ -53,7 +54,7 @@ def test_integration_marker_selects_only_postgres_tests(tmp_path: Path) -> None:
 
 
 def test_unit_marker_selects_every_other_test(tmp_path: Path) -> None:
-    """Select each test that does not use the postgres fixture."""
+    """Select each test that uses no container fixture."""
     result = run_pytest(tmp_path, "--collect-only", "-q", "--no-cov", "-m", "unit")
     ids = collected_ids(result)
     assert result.returncode == 0
@@ -72,12 +73,15 @@ def test_unknown_marker_is_an_error(tmp_path: Path) -> None:
     assert "'integraton' not found in `markers` configuration option" in result.stdout
 
 
-def test_unit_marker_on_postgres_test_is_an_error(tmp_path: Path) -> None:
-    """Stop the run when a test that uses postgres has the unit marker."""
+@pytest.mark.parametrize("fixture", ["postgres", "keycloak"])
+def test_unit_marker_on_container_test_is_an_error(
+    tmp_path: Path, fixture: str
+) -> None:
+    """Stop the run when a test that uses a container fixture has the unit marker."""
     sample = tmp_path / "test_sample.py"
     sample.write_text(
         "import pytest\n\n\n@pytest.mark.unit\n"
-        "def test_x(postgres: object) -> None:\n    pass\n"
+        f"def test_x({fixture}: object) -> None:\n    pass\n"
     )
     result = run_pytest(
         tmp_path,
@@ -91,7 +95,7 @@ def test_unit_marker_on_postgres_test_is_an_error(tmp_path: Path) -> None:
         env={"PYTHONPATH": str(PROJECT_ROOT / "tests")},
     )
     assert result.returncode != 0
-    assert "uses postgres, so it cannot be a unit test." in result.stderr
+    assert f"uses {fixture}, so it cannot be a unit test." in result.stderr
 
 
 def test_run_prints_coverage_report_with_missing_lines(tmp_path: Path) -> None:

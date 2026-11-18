@@ -63,7 +63,7 @@ addopts = ["--cov", "-rfEs"]
 strict_markers = true
 markers = [
     "unit: a test that needs no service outside the process",
-    "integration: a test that needs Docker and a Postgres container",
+    "integration: a test that needs Docker and a Postgres or Keycloak container",
 ]
 
 [tool.coverage.run]
