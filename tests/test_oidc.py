@@ -1,21 +1,28 @@
-"""Unit tests for the OIDC discovery and key cache."""
+"""Unit tests for the OIDC discovery, the key cache, and the token check."""
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx2
 import pytest
-from fake_idp import DISCOVERY_PATH, FAKE_ISSUER, JWKS_PATH, FakeIdp
-from joserfc.jwk import KeySet
+from fake_idp import DISCOVERY_PATH, FAKE_AUDIENCE, FAKE_ISSUER, JWKS_PATH, FakeIdp
+from joserfc.jwk import KeySet, RSAKey
 
 from kamayoq.oidc import (
+    CLOCK_LEEWAY_SECONDS,
     FAILURE_BACKOFF_SECONDS,
     JWKS_MAX_AGE_SECONDS,
     JWKS_RELOAD_MIN_SECONDS,
     JWKS_STALE_LIMIT_SECONDS,
+    MAX_TOKEN_BYTES,
     IdentityProviderError,
+    InvalidTokenError,
     OidcKeys,
+    OidcVerifier,
+    Principal,
     discovery_url,
 )
 
@@ -241,3 +248,236 @@ def test_old_keys_stay_in_use_until_the_stale_limit_when_a_refresh_fails() -> No
 
     run_with_keys(idp, clock, scenario)
     assert idp.requests[JWKS_PATH] == 3
+
+
+def run_verifier[T](
+    idp: FakeIdp,
+    scenario: Callable[[OidcVerifier], Awaitable[T]],
+    clock: FakeClock | None = None,
+    now: Callable[[], float] = time.time,
+    groups_claim: str = "groups",
+) -> T:
+    """Run the scenario on one event loop with an OidcVerifier of the fake IdP."""
+
+    async def main() -> T:
+        async with idp.client() as client:
+            keys = OidcKeys(FAKE_ISSUER, client, clock=clock or FakeClock())
+            verifier = OidcVerifier(
+                keys, FAKE_ISSUER, FAKE_AUDIENCE, groups_claim, now=now
+            )
+            return await scenario(verifier)
+
+    return asyncio.run(main())
+
+
+def verify_token(
+    idp: FakeIdp,
+    token: str,
+    now: Callable[[], float] = time.time,
+    groups_claim: str = "groups",
+) -> Principal:
+    """Return the principal of one token, checked by a new verifier."""
+    return run_verifier(
+        idp, lambda verifier: verifier.verify(token), now=now, groups_claim=groups_claim
+    )
+
+
+def assert_no_token_text(token: str, *texts: str) -> None:
+    """Fail if a text holds a part of the token."""
+    for part in filter(None, token.split(".")):
+        for text in texts:
+            assert part[:40] not in text
+
+
+Rejected = Callable[..., InvalidTokenError]
+
+
+@pytest.fixture
+def rejected(caplog: pytest.LogCaptureFixture) -> Rejected:
+    """Return a check that a token is rejected with no token text in logs or error."""
+    caplog.set_level(logging.DEBUG)
+
+    def check(
+        idp: FakeIdp, token: str, now: Callable[[], float] = time.time
+    ) -> InvalidTokenError:
+        with pytest.raises(InvalidTokenError) as caught:
+            verify_token(idp, token, now=now)
+        assert_no_token_text(token, str(caught.value), caplog.text)
+        return caught.value
+
+    return check
+
+
+def test_a_good_rs256_token_gives_the_subject_the_issuer_and_the_groups() -> None:
+    """Return the principal of a valid token (AC-1)."""
+    idp = FakeIdp()
+    principal = verify_token(idp, idp.token())
+    assert principal == Principal(
+        subject="user-1",
+        issuer=FAKE_ISSUER,
+        groups=frozenset({"admins", "operators"}),
+    )
+
+
+@pytest.mark.parametrize("alg", ["RS384", "PS256", "ES256", "ES384"])
+def test_a_good_token_of_each_allowed_algorithm_is_accepted(alg: str) -> None:
+    """Accept each algorithm on the list, also the ones joserfc does not recommend."""
+    idp = FakeIdp()
+    assert verify_token(idp, idp.token(alg)).subject == "user-1"
+
+
+def test_a_token_with_the_wrong_audience_is_rejected(rejected: Rejected) -> None:
+    """Reject a token for another audience, such as an ID token (AC-2, E13)."""
+    idp = FakeIdp()
+    rejected(idp, idp.token(aud="kamayoq-cli"))
+
+
+def test_a_list_audience_is_accepted_only_with_the_kamayoq_audience(
+    rejected: Rejected,
+) -> None:
+    """Accept a list aud that holds the audience, and reject one that does not."""
+    idp = FakeIdp()
+    assert verify_token(idp, idp.token(aud=["account", FAKE_AUDIENCE])).subject
+    rejected(idp, idp.token(aud=["account", "kamayoq-cli"]))
+
+
+def test_a_token_with_the_wrong_issuer_is_rejected(rejected: Rejected) -> None:
+    """Reject a token of another issuer (AC-2)."""
+    idp = FakeIdp()
+    rejected(idp, idp.token(iss=FAKE_ISSUER + "/"))
+
+
+FIXED_NOW = 2_000_000_000
+PAST_LEEWAY = CLOCK_LEEWAY_SECONDS + 1
+IN_LEEWAY = CLOCK_LEEWAY_SECONDS - 1
+
+
+@pytest.mark.parametrize(
+    ("claims", "accepted"),
+    [
+        ({"exp": FIXED_NOW - IN_LEEWAY}, True),
+        ({"exp": FIXED_NOW - PAST_LEEWAY}, False),
+        ({"nbf": FIXED_NOW + IN_LEEWAY}, True),
+        ({"nbf": FIXED_NOW + PAST_LEEWAY}, False),
+        ({"iat": FIXED_NOW + IN_LEEWAY}, True),
+        ({"iat": FIXED_NOW + PAST_LEEWAY}, False),
+    ],
+)
+def test_time_claims_permit_a_leeway_of_60_seconds(
+    claims: dict[str, Any], accepted: bool, rejected: Rejected
+) -> None:
+    """Accept a time claim within 60 s of now, and reject one past it (AC-2, E8)."""
+    idp = FakeIdp()
+    token = idp.token(**({"iat": FIXED_NOW, "exp": FIXED_NOW + 300} | claims))
+    if accepted:
+        assert verify_token(idp, token, now=lambda: FIXED_NOW).subject == "user-1"
+    else:
+        rejected(idp, token, now=lambda: FIXED_NOW)
+
+
+@pytest.mark.parametrize("claim", ["exp", "sub", "iss", "aud"])
+def test_a_token_without_an_essential_claim_is_rejected(
+    claim: str, rejected: Rejected
+) -> None:
+    """Reject a token with no exp, sub, iss, or aud (E9)."""
+    idp = FakeIdp()
+    without_claim: dict[str, Any] = {claim: None}
+    error = rejected(idp, idp.token(**without_claim))
+    assert claim in str(error)
+
+
+def test_a_token_signed_by_another_key_with_a_known_kid_is_rejected(
+    rejected: Rejected,
+) -> None:
+    """Reject a bad signature (AC-2)."""
+    idp = FakeIdp()
+    other_key = RSAKey.generate_key(2048, parameters={"kid": "rsa-1"})
+    rejected(idp, idp.token(key=other_key))
+
+
+def test_none_hs256_and_es512_tokens_are_rejected(rejected: Rejected) -> None:
+    """Reject each algorithm that is not on the list (AC-2, E7)."""
+    idp = FakeIdp()
+    rejected(idp, idp.unsigned_token())
+    rejected(idp, idp.hs256_token_with_the_public_key())
+    rejected(idp, idp.token("ES512"))
+
+
+def test_an_unknown_kid_reloads_the_key_set_at_most_once_in_60_seconds() -> None:
+    """Accept a token of a new key after one reload, and refuse a second reload (E6)."""
+    idp = FakeIdp()
+    clock = FakeClock()
+
+    async def scenario(verifier: OidcVerifier) -> None:
+        await verifier.verify(idp.token())
+        clock.now += JWKS_RELOAD_MIN_SECONDS + 1
+        new_key = idp.rotate()
+        principal = await verifier.verify(idp.token(key=new_key))
+        assert principal.subject == "user-1"
+        assert idp.requests[JWKS_PATH] == 2
+        unknown_kid_token = idp.token(kid="rsa-3")
+        with pytest.raises(InvalidTokenError) as caught:
+            await verifier.verify(unknown_kid_token)
+        assert_no_token_text(unknown_kid_token, str(caught.value))
+        assert idp.requests[JWKS_PATH] == 2
+
+    run_verifier(idp, scenario, clock=clock)
+
+
+def test_a_token_with_no_kid_and_two_keys_is_rejected_with_no_reload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Reject a token with no kid, also when a reload is permitted (E6a)."""
+    idp = FakeIdp()
+    clock = FakeClock()
+    token = idp.token(omit_kid=True)
+    caplog.set_level(logging.DEBUG)
+
+    async def scenario(verifier: OidcVerifier) -> InvalidTokenError:
+        await verifier.verify(idp.token())
+        clock.now += JWKS_RELOAD_MIN_SECONDS + 1
+        with pytest.raises(InvalidTokenError) as caught:
+            await verifier.verify(token)
+        return caught.value
+
+    error = run_verifier(idp, scenario, clock=clock)
+    assert idp.requests[JWKS_PATH] == 1
+    assert "no kid" in str(error)
+    assert_no_token_text(token, str(error), caplog.text)
+
+
+@pytest.mark.parametrize(
+    ("claims", "groups_claim", "groups"),
+    [
+        ({"groups": None}, "groups", frozenset()),
+        ({"groups": "admins"}, "groups", frozenset()),
+        ({"groups": ["admins", 7]}, "groups", frozenset()),
+        ({"kamayoq_groups": ["readers"]}, "kamayoq_groups", frozenset({"readers"})),
+    ],
+)
+def test_groups_are_empty_unless_the_claim_is_a_list_of_strings(
+    claims: dict[str, Any], groups_claim: str, groups: frozenset[str]
+) -> None:
+    """Give no groups for a bad groups claim, and read a custom claim (E10)."""
+    idp = FakeIdp()
+    token = idp.token(**claims)
+    assert verify_token(idp, token, groups_claim=groups_claim).groups == groups
+
+
+def test_a_token_larger_than_16_kib_is_rejected_before_any_request(
+    rejected: Rejected,
+) -> None:
+    """Reject a large token before a request to the IdP (E11)."""
+    idp = FakeIdp()
+    rejected(idp, "a" * (MAX_TOKEN_BYTES + 1))
+    assert not idp.requests
+
+
+@pytest.mark.parametrize("token", ["\udc80", "é.é.é"])
+def test_a_token_that_is_not_ascii_is_rejected_before_any_request(
+    token: str, rejected: Rejected
+) -> None:
+    """Reject a token with a character that a compact JWT cannot hold."""
+    idp = FakeIdp()
+    rejected(idp, token)
+    assert not idp.requests
