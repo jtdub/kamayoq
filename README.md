@@ -178,7 +178,7 @@ The server listens on `http://127.0.0.1:8000`. Each log line on stderr is one JS
 kamayoq reads the settings from environment variables. It also reads a TOML file, if `KAMAYOQ_CONFIG_FILE` gives its path.
 Environment variables win over the TOML file. kamayoq does not read a `.env` file. [.env.example](.env.example) lists each variable.
 
-WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has no login yet. Use it only in a container or behind a firewall.
+WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network. Set the OIDC settings before you use it. See [Sign in](#sign-in).
 
 | Environment variable | TOML key | Default | Meaning |
 |---|---|---|---|
@@ -189,9 +189,9 @@ WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network, and the API has
 | `KAMAYOQ_LOG_LEVEL` | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`, in upper or lower case. |
 | `KAMAYOQ_API_DOCS` | `api_docs` | `false` | `true` shows `/docs`, `/redoc`, and `/openapi.json`. |
 | `KAMAYOQ_PLUGINS` | `plugins` | Not set | The plugins to load, as a comma list of `group:name`. See [Plugins](#plugins). |
-| `KAMAYOQ_OIDC_ISSUER` | `oidc_issuer` | Not set | The issuer URL of the OIDC provider. It must use `https`, or `http` on `localhost`, `127.0.0.1`, or `[::1]`. Set it together with `KAMAYOQ_OIDC_AUDIENCE`. Checked at start. Not used for login until a later release. |
-| `KAMAYOQ_OIDC_AUDIENCE` | `oidc_audience` | Not set | The audience that an access token must have. Set it together with `KAMAYOQ_OIDC_ISSUER`. Checked at start. Not used for login until a later release. |
-| `KAMAYOQ_OIDC_GROUPS_CLAIM` | `oidc_groups_claim` | `groups` | The token claim that holds the groups of the user. Checked at start. Not used for login until a later release. |
+| `KAMAYOQ_OIDC_ISSUER` | `oidc_issuer` | Not set | The issuer URL of the OIDC provider. It must use `https`, or `http` on `localhost`, `127.0.0.1`, or `[::1]`. Set it together with `KAMAYOQ_OIDC_AUDIENCE`. Checked at start. |
+| `KAMAYOQ_OIDC_AUDIENCE` | `oidc_audience` | Not set | The audience that an access token must have. Set it together with `KAMAYOQ_OIDC_ISSUER`. Checked at start. |
+| `KAMAYOQ_OIDC_GROUPS_CLAIM` | `oidc_groups_claim` | `groups` | The token claim that holds the groups of the user. Checked at start. |
 | `KAMAYOQ_SECRETS_BACKEND` | `secrets_backend` | `env` | Where kamayoq reads secrets: `env` or `file`. See [Secrets](#secrets). |
 | `KAMAYOQ_SECRETS_DIR` | `secrets_dir` | `/run/secrets` | The directory of the secret files. It must exist when `KAMAYOQ_SECRETS_BACKEND` is `file`. |
 | `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
@@ -288,6 +288,42 @@ These limits apply:
 - Output that does not go through the kamayoq log handler is not hidden: a logger with `propagate=False`, a crash traceback, `print`, `warnings`, and output before the log setup.
 - Each process that can read the environment of kamayoq can read an `env` secret. Use the `file` backend to keep secrets out of the environment.
 
+### Sign in
+
+Each route under `/v1` needs an OIDC access token, except `/v1/auth/config`. Send the token in the `Authorization: Bearer <token>` header.
+Set `KAMAYOQ_OIDC_ISSUER` and `KAMAYOQ_OIDC_AUDIENCE` to turn on sign-in. Without them, the server starts, writes one warning, and each `/v1` route returns 401.
+
+The API checks these items of each token:
+
+- The signature, with a key from the `jwks_uri` of the issuer. The algorithm must be RS256, RS384, RS512, PS256, ES256, or ES384.
+- The `iss` claim is equal to `KAMAYOQ_OIDC_ISSUER`, and the `aud` claim has `KAMAYOQ_OIDC_AUDIENCE`.
+- The `exp`, `nbf`, and `iat` claims, with 60 seconds of clock difference. The token must have `exp` and `sub`.
+
+A token that is missing or not valid gets 401 with a `WWW-Authenticate: Bearer` header. When the OIDC provider does not give its keys, the API returns 503.
+After a failed request to the provider, kamayoq waits 30 seconds before it sends the next one.
+
+To set up Keycloak:
+
+1. Make a realm, for example `kamayoq`.
+2. Make a public client, for example `kamayoq-cli`. Turn on "OAuth 2.0 Device Authorization Grant".
+3. Open the dedicated client scope of the client. Add an "Audience" mapper. Set "Included Custom Audience" to the value of `KAMAYOQ_OIDC_AUDIENCE`, for example `kamayoq-api`.
+4. Add a "Group Membership" mapper to the same scope. Set "Token Claim Name" to `groups`, and turn on "Add to access token".
+5. Set `KAMAYOQ_OIDC_ISSUER=https://<keycloak host>/realms/kamayoq` and `KAMAYOQ_OIDC_AUDIENCE=kamayoq-api`.
+
+Use these values for each provider. Issue [#93](https://github.com/jtdub/kamayoq/issues/93) has the full Entra ID and Okta steps.
+
+| Provider | `KAMAYOQ_OIDC_ISSUER` | `KAMAYOQ_OIDC_AUDIENCE` | `KAMAYOQ_OIDC_GROUPS_CLAIM` | CLI scopes |
+|---|---|---|---|---|
+| Keycloak | `https://<host>/realms/<realm>` | The value of the audience mapper | `groups`, with the full group path, for example `/kamayoq-admins` | `openid offline_access` |
+| Entra ID | `https://login.microsoftonline.com/<tenant>/v2.0` | The application ID of the API app. Set `accessTokenAcceptedVersion: 2` in its manifest. | `groups`. The values are group object IDs. | `openid offline_access api://<app-id>/<scope>` |
+| Okta | `https://<org>.okta.com/oauth2/<server-id>`, from a custom authorization server | The audience of the authorization server | The groups claim that you add to the authorization server | `openid offline_access` |
+
+Limits:
+
+- A revoked token stays valid until it expires. kamayoq does not ask the provider about each token.
+- Each server process loads and keeps its own copy of the provider keys.
+- `/readyz` stays 200 while the provider is down. Only the `/v1` routes return 503.
+
 ### Endpoints
 
 | Path | Status | Meaning |
@@ -295,6 +331,9 @@ These limits apply:
 | `/healthz` | 200 | The process runs. This endpoint does not connect to Postgres. |
 | `/readyz` | 200 | Postgres answered `SELECT 1`. |
 | `/readyz` | 503 | Postgres did not answer in time, refused the connection, or refused the login. |
+| `/v1/me` | 200 | The token is valid. The body has the `subject`, the `issuer`, and the `groups` of the token. |
+| `/v1/me` | 401 | The token is missing or not valid, or the server has no OIDC settings. |
+| `/v1/me` | 503 | The OIDC provider did not give its signing keys. |
 
 `/readyz` runs one check at a time, and it keeps each result for 1 second.
 
