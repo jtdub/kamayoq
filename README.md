@@ -192,6 +192,7 @@ WARNING: `KAMAYOQ_HOST=0.0.0.0` opens the server to the network. Set the OIDC se
 | `KAMAYOQ_OIDC_ISSUER` | `oidc_issuer` | Not set | The issuer URL of the OIDC provider. It must use `https`, or `http` on `localhost`, `127.0.0.1`, or `[::1]`. Set it together with `KAMAYOQ_OIDC_AUDIENCE`. Checked at start. |
 | `KAMAYOQ_OIDC_AUDIENCE` | `oidc_audience` | Not set | The audience that an access token must have. Set it together with `KAMAYOQ_OIDC_ISSUER`. Checked at start. |
 | `KAMAYOQ_OIDC_GROUPS_CLAIM` | `oidc_groups_claim` | `groups` | The token claim that holds the groups of the user. Checked at start. |
+| `KAMAYOQ_OIDC_ROLE_MAP` | `oidc_role_map` | Not set | A JSON object of IdP group to list of kamayoq roles. See [Roles](#roles). Checked at start. |
 | `KAMAYOQ_SECRETS_BACKEND` | `secrets_backend` | `env` | Where kamayoq reads secrets: `env` or `file`. See [Secrets](#secrets). |
 | `KAMAYOQ_SECRETS_DIR` | `secrets_dir` | `/run/secrets` | The directory of the secret files. It must exist when `KAMAYOQ_SECRETS_BACKEND` is `file`. |
 | `KAMAYOQ_CONFIG_FILE` | None | Not set | The path of the TOML file. A relative path starts at the current directory. |
@@ -337,6 +338,26 @@ Limits:
 - kamayoq keeps the loaded keys for up to 24 hours while the provider is down. During that time, the `/v1` routes still accept valid tokens.
 - The `/v1` routes return 503 only when kamayoq has no keys, for example after 24 hours, or after a restart during the outage. `/readyz` stays 200.
 - WARNING: A restart of kamayoq while the provider is down deletes the loaded keys, and each `/v1` route then returns 503. Do not restart kamayoq until the provider is up again.
+
+### Roles
+
+`KAMAYOQ_OIDC_ROLE_MAP` gives kamayoq roles to the members of IdP groups. The roles are `admin`, `agent-author`, `tool-granter`, `approver`, `auditor`, and `viewer`.
+A user gets each role of each group of the token that the map names. A user with no mapped group gets no role. `/v1/me` shows the roles.
+
+In the environment, give a JSON object:
+
+```bash
+KAMAYOQ_OIDC_ROLE_MAP='{"/kamayoq-admins": ["admin"], "/kamayoq-readers": ["viewer"]}'
+```
+
+In the TOML file, give an inline table:
+
+```toml
+oidc_role_map = { "/kamayoq-admins" = ["admin"], "/kamayoq-readers" = ["viewer"] }
+```
+
+Use the group names as the token gives them. Keycloak gives the full group path, for example `/kamayoq-admins`. Entra ID gives group object IDs.
+A role name that does not exist, an empty group name, or text that is not a JSON object stops `kamayoq serve` with exit code 2.
 
 ### Endpoints
 

@@ -483,3 +483,75 @@ def test_secret_variables_are_not_settings(
     """Load the settings when KAMAYOQ_SECRET_ variables are set."""
     monkeypatch.setenv("KAMAYOQ_SECRET_SLACK_TOKEN", "v-123456")
     assert load_settings().secrets_backend == "env"
+
+
+ROLE_MAP_ERROR = (
+    "- oidc_role_map (KAMAYOQ_OIDC_ROLE_MAP): Value error, must be a JSON object "
+    "of group to list of roles. The roles are admin, agent-author, tool-granter, "
+    "approver, auditor, viewer."
+)
+EMPTY_GROUP_ERROR = (
+    "- oidc_role_map (KAMAYOQ_OIDC_ROLE_MAP): Value error, a group name must not "
+    "be empty"
+)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ('{"/a": ["root"]}', ROLE_MAP_ERROR),
+        ("not json", ROLE_MAP_ERROR),
+        ("", ROLE_MAP_ERROR),
+        ('["admin"]', ROLE_MAP_ERROR),
+        ('{"/a": "admin"}', ROLE_MAP_ERROR),
+        ('{"": ["admin"]}', EMPTY_GROUP_ERROR),
+    ],
+)
+def test_bad_oidc_role_map_stops_serve_with_exit_2(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    database_url: str,
+    value: str,
+    expected: str,
+) -> None:
+    """Exit 2 with the role map setting named for a bad role map (E14)."""
+
+    def fail_run(*args: object, **kwargs: object) -> None:
+        pytest.fail("uvicorn started with bad settings")
+
+    monkeypatch.setattr("kamayoq.cli.uvicorn.run", fail_run)
+    monkeypatch.setenv("KAMAYOQ_OIDC_ROLE_MAP", value)
+    assert main(["serve"]) == 2
+    assert capsys.readouterr().err == (
+        f"kamayoq: Settings are not valid:\n{expected}\n"
+    )
+
+
+ENV_ROLE_MAP = '{"/kamayoq-admins": ["admin", "auditor"], "/readers": ["viewer"]}'
+TOML_ROLE_MAP = (
+    'oidc_role_map = { "/kamayoq-admins" = ["admin", "auditor"], '
+    '"/readers" = ["viewer"] }\n'
+)
+
+
+def test_oidc_role_map_is_empty_by_default(database_url: str) -> None:
+    """Give no role to any group when the role map is not set."""
+    assert load_settings().oidc_role_map == {}
+
+
+def test_toml_inline_table_gives_the_same_role_map_as_env_json(
+    monkeypatch: pytest.MonkeyPatch, database_url: str, tmp_path: Path
+) -> None:
+    """Read the same role map from a TOML inline table and from JSON (C6-3)."""
+    monkeypatch.setenv("KAMAYOQ_OIDC_ROLE_MAP", ENV_ROLE_MAP)
+    from_env = load_settings().oidc_role_map
+    monkeypatch.delenv("KAMAYOQ_OIDC_ROLE_MAP")
+    config_file(monkeypatch, tmp_path / "kamayoq.toml", TOML_ROLE_MAP)
+    assert (
+        load_settings().oidc_role_map
+        == from_env
+        == {
+            "/kamayoq-admins": frozenset({"admin", "auditor"}),
+            "/readers": frozenset({"viewer"}),
+        }
+    )
