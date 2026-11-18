@@ -289,10 +289,11 @@ def assert_no_token_text(token: str, *texts: str) -> None:
             assert part[:40] not in text
 
 
+Rejected = Callable[..., InvalidTokenError]
+
+
 @pytest.fixture
-def rejected(
-    caplog: pytest.LogCaptureFixture,
-) -> Callable[..., InvalidTokenError]:
+def rejected(caplog: pytest.LogCaptureFixture) -> Rejected:
     """Return a check that a token is rejected with no token text in logs or error."""
     caplog.set_level(logging.DEBUG)
 
@@ -305,9 +306,6 @@ def rejected(
         return caught.value
 
     return check
-
-
-Rejected = Callable[..., InvalidTokenError]
 
 
 def test_a_good_rs256_token_gives_the_subject_the_issuer_and_the_groups() -> None:
@@ -413,8 +411,8 @@ def test_an_unknown_kid_reloads_the_key_set_at_most_once_in_60_seconds() -> None
     async def scenario(verifier: OidcVerifier) -> None:
         await verifier.verify(idp.token())
         clock.now += JWKS_RELOAD_MIN_SECONDS + 1
-        idp.rotate()
-        principal = await verifier.verify(idp.token(key=idp.next_key))
+        new_key = idp.rotate()
+        principal = await verifier.verify(idp.token(key=new_key))
         assert principal.subject == "user-1"
         assert idp.requests[JWKS_PATH] == 2
         with pytest.raises(InvalidTokenError):
@@ -429,7 +427,7 @@ def test_a_token_with_no_kid_and_two_keys_is_rejected_with_no_reload(
 ) -> None:
     """Reject a token with no kid at once, because a reload cannot help (E6a)."""
     idp = FakeIdp()
-    rejected(idp, idp.token(kid=None))
+    rejected(idp, idp.token(omit_kid=True))
     assert idp.requests[JWKS_PATH] == 1
 
 

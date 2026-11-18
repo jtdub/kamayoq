@@ -1,7 +1,6 @@
 """A fake OIDC identity provider for unit tests, served by an httpx2 MockTransport."""
 
 import asyncio
-import base64
 import hashlib
 import hmac
 import json
@@ -11,16 +10,12 @@ from collections import Counter
 import httpx2
 from joserfc import jwt
 from joserfc.jwk import ECKey, KeySet, RSAKey
+from joserfc.util import json_b64encode, urlsafe_b64encode
 
 FAKE_ISSUER = "https://idp.example.com/realms/kamayoq"
 DISCOVERY_PATH = "/realms/kamayoq/.well-known/openid-configuration"
 JWKS_PATH = "/realms/kamayoq/protocol/openid-connect/certs"
 FAKE_AUDIENCE = "kamayoq-api"
-
-
-def _base64url_json(value: dict[str, object]) -> str:
-    """Return the value as JSON in base64url text with no padding."""
-    return base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
 
 
 class FakeIdp:
@@ -37,7 +32,6 @@ class FakeIdp:
         self.ec_key = ECKey.generate_key("P-256", parameters={"kid": "ec-1"})
         self.ec384_key = ECKey.generate_key("P-384", parameters={"kid": "ec-384"})
         self.ec521_key = ECKey.generate_key("P-521", parameters={"kid": "ec-521"})
-        self.next_key = RSAKey.generate_key(2048, parameters={"kid": "rsa-2"})
         self.published: list[RSAKey | ECKey] = [
             self.rsa_key,
             self.ec_key,
@@ -59,9 +53,11 @@ class FakeIdp:
         key_set = KeySet(list(self.published))
         return dict(key_set.as_dict(private=False))
 
-    def rotate(self) -> None:
-        """Publish the next key in the key set."""
-        self.published.append(self.next_key)
+    def rotate(self) -> RSAKey:
+        """Make a new key, publish it in the key set, and return it."""
+        new_key = RSAKey.generate_key(2048, parameters={"kid": "rsa-2"})
+        self.published.append(new_key)
+        return new_key
 
     def claims(self, **claims: object) -> dict[str, object]:
         """Return valid token claims with the changes. A value of None removes it."""
@@ -80,13 +76,14 @@ class FakeIdp:
     def token(
         self,
         alg: str = "RS256",
-        kid: str | None = "",
+        kid: str | None = None,
         key: RSAKey | ECKey | None = None,
+        omit_kid: bool = False,
         **claims: object,
     ) -> str:
         """Return a JWT signed with the key, or with the key of this IdP for the alg.
 
-        An empty kid gives the kid of the key. A kid of None leaves it out.
+        With no kid, the header has the kid of the key.
         """
         keys_for_alg: dict[str, RSAKey | ECKey] = {
             "ES256": self.ec_key,
@@ -95,21 +92,21 @@ class FakeIdp:
         }
         signing_key: RSAKey | ECKey = key or keys_for_alg.get(alg, self.rsa_key)
         header: dict[str, object] = {"alg": alg}
-        if kid is not None:
+        if not omit_kid:
             header["kid"] = kid or signing_key.kid
         return jwt.encode(header, self.claims(**claims), signing_key, algorithms=[alg])
 
     def unsigned_token(self, alg: str = "none") -> str:
         """Return a JWT with the alg and no signature."""
-        header = _base64url_json({"alg": alg, "kid": self.rsa_key.kid})
-        return f"{header}.{_base64url_json(self.claims())}."
+        header = json_b64encode({"alg": alg, "kid": self.rsa_key.kid}).decode()
+        return f"{header}.{json_b64encode(self.claims()).decode()}."
 
     def hs256_token_with_the_public_key(self) -> str:
         """Return an HS256 JWT with the public RSA key as the HMAC secret."""
         signing_input = self.unsigned_token("HS256").rstrip(".")
         secret = self.rsa_key.as_pem(private=False)
         digest = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
-        signature = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        signature = urlsafe_b64encode(digest).decode()
         return f"{signing_input}.{signature}"
 
     def discovery(self) -> dict[str, object]:
