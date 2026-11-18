@@ -1,0 +1,3 @@
+Added sign-in for the API with an OIDC provider, such as Keycloak, Entra ID, or Okta. Set `KAMAYOQ_OIDC_ISSUER` and `KAMAYOQ_OIDC_AUDIENCE`.
+Added the `GET /v1/me` endpoint. It shows the user and the IdP groups of the token.
+Added a token check to each endpoint under `/v1`. Without the OIDC settings, these endpoints return 401.
