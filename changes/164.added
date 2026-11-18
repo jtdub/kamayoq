@@ -1,0 +1,1 @@
+Added a memory cache for the keys of the OIDC provider. The API sign-in of a later release uses it.
