@@ -1,6 +1,5 @@
 """Settings of kamayoq, read from KAMAYOQ_ environment variables."""
 
-import json
 import os
 import re
 import tomllib
@@ -25,7 +24,7 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-from kamayoq.roles import Role
+from kamayoq.roles import Role, RoleMap
 
 ENV_PREFIX = "KAMAYOQ_"
 CONFIG_FILE_ENV = "KAMAYOQ_CONFIG_FILE"
@@ -33,7 +32,6 @@ LIBPQ_SCHEMES = frozenset({"postgres", "postgresql"})
 PLUGIN_REFERENCE = re.compile(r"[a-z][a-z0-9_]*:[A-Za-z0-9][A-Za-z0-9._-]*")
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-RoleMap = dict[str, frozenset[Role]]
 ROLE_MAP_ADAPTER: TypeAdapter[RoleMap] = TypeAdapter(RoleMap)
 ROLE_MAP_ERROR = (
     "must be a JSON object of group to list of roles. "
@@ -194,7 +192,7 @@ class Settings(BaseSettings):
         """
         try:
             if isinstance(value, str):
-                value = json.loads(value)
+                return ROLE_MAP_ADAPTER.validate_json(value)
             return ROLE_MAP_ADAPTER.validate_python(value)
         except ValueError:
             raise ValueError(ROLE_MAP_ERROR) from None

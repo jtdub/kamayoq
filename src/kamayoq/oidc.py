@@ -4,7 +4,7 @@ import asyncio
 import logging
 import math
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,7 +14,7 @@ from joserfc.errors import ClaimError, InvalidKeyIdError, JoseError
 from joserfc.jwk import KeySet
 from joserfc.jws import extract_compact
 
-from kamayoq.roles import Role, roles_for_groups
+from kamayoq.roles import Role, RoleMap, roles_for_groups
 from kamayoq.settings import require_secure_url
 
 CLOCK_LEEWAY_SECONDS = 60
@@ -235,13 +235,13 @@ class OidcVerifier:
         issuer: str,
         audience: str,
         groups_claim: str,
-        role_map: Mapping[str, frozenset[Role]] | None = None,
+        role_map: RoleMap,
         now: Callable[[], float] = time.time,
     ) -> None:
         """Keep the key cache, the expected claims, the role map, and the wall clock."""
         self._keys = keys
         self._groups_claim = groups_claim
-        self._role_map = role_map or {}
+        self._role_map = role_map
         self._claims_registry = jwt.JWTClaimsRegistry(
             now=lambda: int(now()),
             leeway=CLOCK_LEEWAY_SECONDS,

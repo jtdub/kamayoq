@@ -1,12 +1,10 @@
 """Unit tests for the map from IdP groups to kamayoq roles."""
 
-from collections.abc import Mapping
-
 import pytest
 
-from kamayoq.roles import Role, roles_for_groups
+from kamayoq.roles import RoleMap, roles_for_groups
 
-ROLE_MAP: Mapping[str, frozenset[Role]] = {
+ROLE_MAP: RoleMap = {
     "/admins": frozenset({"admin"}),
     "/authors": frozenset({"agent-author", "viewer"}),
     "/readers": frozenset({"viewer"}),
