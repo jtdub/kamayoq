@@ -50,9 +50,11 @@ def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
-        await engine.dispose()
-        if idp_client is not None:
-            await idp_client.aclose()
+        try:
+            await engine.dispose()
+        finally:
+            if idp_client is not None:
+                await idp_client.aclose()
 
     docs = settings.api_docs
     app = FastAPI(

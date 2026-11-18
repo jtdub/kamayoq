@@ -305,7 +305,7 @@ After a failed request to the provider, kamayoq waits 30 seconds before it sends
 To set up Keycloak:
 
 1. Make a realm, for example `kamayoq`.
-2. Make a public client, for example `kamayoq-cli`. Turn on "OAuth 2.0 Device Authorization Grant".
+2. Make a client, for example `kamayoq-cli`. Turn off "Client authentication". Turn on "OAuth 2.0 Device Authorization Grant".
 3. Open the dedicated client scope of the client. Add an "Audience" mapper. Set "Included Custom Audience" to the value of `KAMAYOQ_OIDC_AUDIENCE`, for example `kamayoq-api`.
 4. Add a "Group Membership" mapper to the same scope. Set "Token Claim Name" to `groups`, and turn on "Add to access token".
 5. Set `KAMAYOQ_OIDC_ISSUER=https://<keycloak host>/realms/kamayoq` and `KAMAYOQ_OIDC_AUDIENCE=kamayoq-api`.
@@ -315,7 +315,7 @@ Use these values for each provider. Issue [#93](https://github.com/jtdub/kamayoq
 | Provider | `KAMAYOQ_OIDC_ISSUER` | `KAMAYOQ_OIDC_AUDIENCE` | `KAMAYOQ_OIDC_GROUPS_CLAIM` | CLI scopes |
 |---|---|---|---|---|
 | Keycloak | `https://<host>/realms/<realm>` | The value of the audience mapper | `groups`, with the full group path, for example `/kamayoq-admins` | `openid offline_access` |
-| Entra ID | `https://login.microsoftonline.com/<tenant>/v2.0` | The application ID of the API app. Set `accessTokenAcceptedVersion: 2` in its manifest. | `groups`. The values are group object IDs. | `openid offline_access api://<app-id>/<scope>` |
+| Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0`. `<tenant-id>` is the directory (tenant) ID, a GUID. Do not use a domain name. | The application ID of the API app. Set `accessTokenAcceptedVersion: 2` in its manifest. | `groups`. The values are group object IDs. Add the groups claim in Token configuration of the API app first. | `openid offline_access api://<app-id>/<scope>` |
 | Okta | `https://<org>.okta.com/oauth2/<server-id>`, from a custom authorization server | The audience of the authorization server | The groups claim that you add to the authorization server | `openid offline_access` |
 
 Limits:

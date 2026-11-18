@@ -43,7 +43,7 @@ async def current_principal(
     if verifier is None:
         raise _unauthorized(NOT_CONFIGURED_DETAIL)
     if credentials is None:
-        raise _unauthorized("Not authenticated")
+        raise _unauthorized("The request has no bearer token.")
     try:
         principal = await verifier.verify(credentials.credentials)
     except InvalidTokenError as error:

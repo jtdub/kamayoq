@@ -213,3 +213,18 @@ def test_app_stop_closes_the_http_client(
     with TestClient(oidc_app()):
         assert [made.is_closed for made in made_clients] == [False]
     assert [made.is_closed for made in made_clients] == [True]
+
+
+def test_app_stop_closes_the_http_client_when_the_engine_fails(
+    made_clients: list[httpx2.AsyncClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Close the HTTP client of the IdP when the engine dispose raises."""
+    app = oidc_app()
+
+    async def failing_dispose(self: object, close: bool = True) -> None:
+        raise RuntimeError("dispose failed")
+
+    monkeypatch.setattr(type(app.state.engine), "dispose", failing_dispose)
+    with pytest.raises(RuntimeError, match="dispose failed"), TestClient(app):
+        pass
+    assert [made.is_closed for made in made_clients] == [True]
