@@ -53,13 +53,9 @@ async def _get_json_object(client: httpx2.AsyncClient, url: str) -> dict[str, ob
     """
     try:
         response = await client.get(url, timeout=HTTP_TIMEOUT_SECONDS)
-    except httpx2.TimeoutException as error:
-        raise IdentityProviderError(
-            f"{url} did not answer in {HTTP_TIMEOUT_SECONDS} s"
-        ) from error
     except httpx2.TransportError as error:
         raise IdentityProviderError(
-            f"{url} cannot be reached: {type(error).__name__}"
+            f"{url} did not answer: {type(error).__name__}"
         ) from error
     if response.status_code != 200:
         raise IdentityProviderError(f"{url} returned HTTP {response.status_code}")
@@ -175,9 +171,9 @@ class OidcKeys:
                 f"but KAMAYOQ_OIDC_ISSUER is {self._issuer!r}"
             )
         jwks_uri = discovery.get("jwks_uri")
+        if not isinstance(jwks_uri, str):
+            raise IdentityProviderError(f"{url} has no jwks_uri")
         try:
-            if not isinstance(jwks_uri, str):
-                raise ValueError("the jwks_uri is missing")
             require_secure_url(jwks_uri)
         except ValueError as error:
             raise IdentityProviderError(f"{url} has a bad jwks_uri: {error}") from error
