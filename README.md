@@ -52,7 +52,7 @@ uv run pytest
 ```
 
 `uv run pytest` runs the unit tests and the integration tests, and prints a coverage report.
-The integration tests start a Postgres 18 container with pgvector, so they need Docker.
+The integration tests start a Postgres 18 container with pgvector and a Keycloak container, so they need Docker.
 When Docker is not available, pytest skips them and shows the reason.
 If `KAMAYOQ_REQUIRE_DOCKER` has a value other than empty or `0`, the tests fail and do not skip.
 To run one group only:
