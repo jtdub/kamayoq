@@ -1,0 +1,3 @@
+Added the `KAMAYOQ_OIDC_ISSUER`, `KAMAYOQ_OIDC_AUDIENCE`, and `KAMAYOQ_OIDC_GROUPS_CLAIM` settings for a later sign-in release. kamayoq checks them at start, but does not use them yet.
+Added a start check: kamayoq exits with code 2 if you set only one of `KAMAYOQ_OIDC_ISSUER` and `KAMAYOQ_OIDC_AUDIENCE`.
+Added a start check: kamayoq exits with code 2 if `KAMAYOQ_OIDC_ISSUER` does not use `https`. kamayoq accepts plain `http` only on `localhost`, `127.0.0.1`, and `[::1]`.
