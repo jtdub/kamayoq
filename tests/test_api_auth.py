@@ -50,12 +50,13 @@ def made_clients(
     return clients
 
 
-def oidc_app() -> FastAPI:
-    """Return an app with the OIDC settings of the fake IdP."""
+def oidc_app(role_map: str = "{}") -> FastAPI:
+    """Return an app with the OIDC settings of the fake IdP and the JSON role map."""
     settings = Settings(
         database_url=DATABASE_URL,
         oidc_issuer=FAKE_ISSUER,
         oidc_audience=FAKE_AUDIENCE,
+        oidc_role_map=role_map,
     )
     return create_app(settings)
 
@@ -108,7 +109,20 @@ def test_good_token_gives_the_principal(client: TestClient, idp: FakeIdp) -> Non
         "subject": "user-1",
         "issuer": FAKE_ISSUER,
         "groups": ["admins", "operators"],
+        "roles": [],
     }
+
+
+def test_good_token_gives_the_sorted_roles_of_the_mapped_groups(
+    made_clients: list[httpx2.AsyncClient], idp: FakeIdp
+) -> None:
+    """Return the sorted roles of the mapped groups of the token (AC-4)."""
+    role_map = '{"admins": ["viewer", "admin"], "operators": ["approver", "viewer"]}'
+    token = idp.token(groups=["operators", "admins", "guests"])
+    with TestClient(oidc_app(role_map)) as started:
+        response = started.get("/v1/me", headers=bearer(token))
+    assert response.status_code == 200
+    assert response.json()["roles"] == ["admin", "approver", "viewer"]
 
 
 @pytest.mark.parametrize(

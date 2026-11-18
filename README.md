@@ -366,7 +366,7 @@ A role name that does not exist, an empty group name, or text that is not a JSON
 | `/healthz` | 200 | The process runs. This endpoint does not connect to Postgres. |
 | `/readyz` | 200 | Postgres answered `SELECT 1`. |
 | `/readyz` | 503 | Postgres did not answer in time, refused the connection, or refused the login. |
-| `/v1/me` | 200 | The token is valid. The body has the `subject`, the `issuer`, and the `groups` of the token. |
+| `/v1/me` | 200 | The token is valid. The body has the `subject`, the `issuer`, the `groups`, and the kamayoq `roles` of the token. |
 | `/v1/me` | 401 | The token is missing or not valid, or the server has no OIDC settings. |
 | `/v1/me` | 503 | The OIDC provider did not give its signing keys. |
 

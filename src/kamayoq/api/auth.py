@@ -63,12 +63,13 @@ def build_protected_router() -> APIRouter:
 
     @protected.get("/me")
     async def me(request: Request) -> dict[str, object]:
-        """Return the subject, the issuer, and the groups of the token."""
+        """Return the subject, the issuer, the groups, and the roles of the token."""
         principal: Principal = request.state.principal
         return {
             "subject": principal.subject,
             "issuer": principal.issuer,
             "groups": sorted(principal.groups),
+            "roles": sorted(principal.roles),
         }
 
     return protected

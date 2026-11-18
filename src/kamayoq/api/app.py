@@ -43,7 +43,13 @@ def create_app(settings: Settings) -> FastAPI:
     if issuer is not None and audience is not None:
         idp_client = httpx2.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS)
         keys = OidcKeys(issuer, idp_client)
-        verifier = OidcVerifier(keys, issuer, audience, settings.oidc_groups_claim)
+        verifier = OidcVerifier(
+            keys,
+            issuer,
+            audience,
+            settings.oidc_groups_claim,
+            settings.oidc_role_map,
+        )
     else:
         logger.warning("OIDC settings are not set, so each protected route returns 401")
 
