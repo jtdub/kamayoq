@@ -135,3 +135,10 @@ class FakeIdp:
         default_status = 200 if path in default_bodies else 404
         content = body if isinstance(body, bytes) else json.dumps(body).encode()
         return httpx2.Response(self.status.get(path, default_status), content=content)
+
+
+def assert_no_token_text(token: str, *texts: str) -> None:
+    """Fail if a text holds a part of the token."""
+    for part in filter(None, token.split(".")):
+        for text in texts:
+            assert part[:40] not in text

@@ -2,14 +2,23 @@
 
 import logging
 from collections.abc import Callable, Iterator
+from types import SimpleNamespace
+from typing import Any
 
 import httpx2
 import pytest
-from fake_idp import DISCOVERY_PATH, FAKE_AUDIENCE, FAKE_ISSUER, FakeIdp
+from fake_idp import (
+    DISCOVERY_PATH,
+    FAKE_AUDIENCE,
+    FAKE_ISSUER,
+    FakeIdp,
+    assert_no_token_text,
+)
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 
+from kamayoq.api import app as app_module
 from kamayoq.api import auth
 from kamayoq.api.app import create_app
 from kamayoq.api.health import ReadinessCheck
@@ -24,20 +33,20 @@ def idp() -> FakeIdp:
     return FakeIdp()
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def made_clients(
     idp: FakeIdp, monkeypatch: pytest.MonkeyPatch
 ) -> list[httpx2.AsyncClient]:
-    """Connect each new HTTP client to the fake IdP, and keep the clients."""
+    """Connect each IdP client that create_app makes to the fake IdP, and keep it."""
     clients: list[httpx2.AsyncClient] = []
-    real_client = httpx2.AsyncClient
 
-    def client_with_fake_transport(timeout: float) -> httpx2.AsyncClient:
-        made = real_client(transport=idp.transport, timeout=timeout)
+    def client_with_fake_transport(**options: Any) -> httpx2.AsyncClient:
+        made = httpx2.AsyncClient(transport=idp.transport, **options)
         clients.append(made)
         return made
 
-    monkeypatch.setattr(httpx2, "AsyncClient", client_with_fake_transport)
+    fake_httpx2 = SimpleNamespace(AsyncClient=client_with_fake_transport)
+    monkeypatch.setattr(app_module, "httpx2", fake_httpx2)
     return clients
 
 
@@ -52,7 +61,7 @@ def oidc_app() -> FastAPI:
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def client(made_clients: list[httpx2.AsyncClient]) -> Iterator[TestClient]:
     """Return a started test client of an app with OIDC settings."""
     with TestClient(oidc_app()) as started:
         yield started
@@ -63,20 +72,13 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def log_text(caplog: pytest.LogCaptureFixture) -> str:
-    """Return the text of each captured log record."""
-    return "\n".join(
-        f"{record.getMessage()} {record.exc_text or ''}" for record in caplog.records
-    )
-
-
 def test_no_oidc_settings_gives_401_and_one_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Refuse each protected route when the server has no OIDC settings (E1)."""
     with caplog.at_level(logging.WARNING):
         app = create_app(Settings(database_url=DATABASE_URL))
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    warnings = [r for r in caplog.records if r.name == app_module.logger.name]
     assert [r.getMessage() for r in warnings] == [
         "OIDC settings are not set, so each protected route returns 401"
     ]
@@ -136,7 +138,7 @@ def test_bad_token_gives_401_invalid_token(
     infos = [r for r in caplog.records if r.name == auth.logger.name]
     assert len(infos) == 1
     assert infos[0].levelno == logging.INFO
-    assert_no_token_text(token, log_text(caplog), response.text)
+    assert_no_token_text(token, caplog.text, response.text)
 
 
 def test_identity_provider_failure_gives_503_and_readyz_is_unchanged(
@@ -160,7 +162,7 @@ def test_identity_provider_failure_gives_503_and_readyz_is_unchanged(
     assert idp.requests[DISCOVERY_PATH] == 1
     assert client.get("/readyz").status_code == 200
     assert not [r for r in caplog.records if r.name == auth.logger.name]
-    assert_no_token_text(token, log_text(caplog), first.text)
+    assert_no_token_text(token, caplog.text, first.text)
 
 
 def test_healthz_needs_no_token(client: TestClient) -> None:
@@ -168,7 +170,9 @@ def test_healthz_needs_no_token(client: TestClient) -> None:
     assert client.get("/healthz").status_code == 200
 
 
-def test_new_route_on_the_protected_router_needs_a_token() -> None:
+def test_new_route_on_the_protected_router_needs_a_token(
+    made_clients: list[httpx2.AsyncClient],
+) -> None:
     """Protect a route that has no auth code of its own (E13a)."""
     protected = auth.build_protected_router()
     probe = APIRouter()
@@ -209,11 +213,3 @@ def test_app_stop_closes_the_http_client(
     with TestClient(oidc_app()):
         assert [made.is_closed for made in made_clients] == [False]
     assert [made.is_closed for made in made_clients] == [True]
-
-
-def assert_no_token_text(token: str, *texts: str) -> None:
-    """Fail if a text holds the token or one of its parts."""
-    parts = [part for part in token.split(".") if len(part) >= 8] or [token]
-    for text in texts:
-        for part in parts:
-            assert part not in text

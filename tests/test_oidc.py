@@ -8,7 +8,14 @@ from typing import Any
 
 import httpx2
 import pytest
-from fake_idp import DISCOVERY_PATH, FAKE_AUDIENCE, FAKE_ISSUER, JWKS_PATH, FakeIdp
+from fake_idp import (
+    DISCOVERY_PATH,
+    FAKE_AUDIENCE,
+    FAKE_ISSUER,
+    JWKS_PATH,
+    FakeIdp,
+    assert_no_token_text,
+)
 from joserfc.jwk import KeySet, RSAKey
 
 from kamayoq.oidc import (
@@ -280,13 +287,6 @@ def verify_token(
     return run_verifier(
         idp, lambda verifier: verifier.verify(token), now=now, groups_claim=groups_claim
     )
-
-
-def assert_no_token_text(token: str, *texts: str) -> None:
-    """Fail if a text holds a part of the token."""
-    for part in filter(None, token.split(".")):
-        for text in texts:
-            assert part[:40] not in text
 
 
 Rejected = Callable[..., InvalidTokenError]
