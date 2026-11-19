@@ -1,0 +1,1 @@
+Added a test of the API sign-in against a real Keycloak server in each CI run.
